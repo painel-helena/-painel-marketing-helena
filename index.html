@@ -1033,6 +1033,7 @@
       const [kwPage,setKwPage]=useState(0);
       const [brandPage,setBrandPage]=useState(0);
       const [origPage,setOrigPage]=useState(0);
+      const [mapaPage,setMapaPage]=useState(0);
       const KW_PER_PAGE=10;
       const gscOk = !!(api?.gsc && !api.gsc.erro && (api.gsc.keywords?.length||api.gsc.historico?.length));
       const ga4Ok = !!(api?.ga4 && !api.ga4.erro && api.ga4.canais?.length);
@@ -1514,16 +1515,26 @@
             </div>
             )}
             {/* Mapa de Keywords */}
+            {(()=>{
+              const kwsSorted=[...kws].sort((a,b)=>b.volume-a.volume);
+              const totalMapaPags=Math.ceil(kwsSorted.length/KW_PER_PAGE);
+              const btnStyleM=(disabled)=>({padding:'5px 14px',borderRadius:7,border:'1px solid #e2e8f0',background:disabled?'#f8fafc':'#fff',color:disabled?'#cbd5e1':'#374151',fontWeight:600,fontSize:12,cursor:disabled?'default':'pointer'});
+              const winM=[];const deltaM=3;
+              for(let i=0;i<totalMapaPags;i++){if(i===0||i===totalMapaPags-1||Math.abs(i-mapaPage)<=deltaM)winM.push(i);}
+              const pagesM=[];let prevM=-1;
+              winM.forEach(i=>{if(prevM>=0&&i-prevM>1)pagesM.push('...');pagesM.push(i);prevM=i;});
+              return(
             <div style={{background:'#fff',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
               <p style={{fontSize:13,fontWeight:700,color:'#1e293b',margin:'0 0 4px'}}>Mapa de Palavras-Chave</p>
-              <p style={{fontSize:11,color:'#94a3b8',margin:'0 0 16px'}}>Top {kws.length} keywords orgânicas · ordenadas por volume</p>
+              <p style={{fontSize:11,color:'#94a3b8',margin:'0 0 16px'}}>Top {kwsSorted.length} keywords orgânicas · ordenadas por volume</p>
               <div style={{overflowX:'auto'}}>
                 <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-                  <thead><tr style={{background:'#f8fafc'}}>{['Keyword','Zona','Posição','Volume/mês','CPC (R$)','Página'].map(h=><th key={h} style={{padding:'8px 12px',textAlign:'left',fontWeight:600,color:'#64748b',borderBottom:'1px solid #e2e8f0',whiteSpace:'nowrap'}}>{h}</th>)}</tr></thead>
-                  <tbody>{kws.sort((a,b)=>b.volume-a.volume).map((k,i)=>{
+                  <thead><tr style={{background:'#f8fafc'}}>{['#','Keyword','Zona','Posição','Volume/mês','CPC (R$)','Página'].map(h=><th key={h} style={{padding:'8px 12px',textAlign:'left',fontWeight:600,color:'#64748b',borderBottom:'1px solid #e2e8f0',whiteSpace:'nowrap'}}>{h}</th>)}</tr></thead>
+                  <tbody>{kwsSorted.slice(mapaPage*KW_PER_PAGE,(mapaPage+1)*KW_PER_PAGE).map((k,i)=>{
                     const zona=k.posicao<=3?'Defender':k.posicao<=20?'Atacar':'Capturar';
                     const page=k.url?k.url.replace(/^https?:\/\/[^/]+/,'').replace(/\/$/,'')||'/':'—';
                     return(<tr key={i} style={{borderBottom:'1px solid #f1f5f9',background:i%2===0?'#fff':'#fafafa'}}>
+                      <td style={{padding:'8px 12px'}}><span style={{fontSize:11,fontWeight:700,color:'#cbd5e1'}}>{mapaPage*KW_PER_PAGE+i+1}</span></td>
                       <td style={{padding:'8px 12px',fontWeight:600,color:'#1e293b'}}>{k.kw}</td>
                       <td style={{padding:'8px 12px'}}><span style={{background:zonaBg[zona],color:zonaColor[zona],fontWeight:700,fontSize:11,padding:'2px 8px',borderRadius:20}}>{zona}</span></td>
                       <td style={{padding:'8px 12px',textAlign:'center',fontWeight:700,color:k.posicao<=3?'#10b981':k.posicao<=20?'#f59e0b':'#6366f1'}}>#{k.posicao}</td>
@@ -1534,7 +1545,24 @@
                   })}</tbody>
                 </table>
               </div>
+              {kwsSorted.length>KW_PER_PAGE&&(
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:12,paddingTop:12,borderTop:'1px solid #f1f5f9'}}>
+                  <button onClick={()=>setMapaPage(p=>Math.max(0,p-1))} disabled={mapaPage===0} style={btnStyleM(mapaPage===0)}>← Anterior</button>
+                  <div style={{display:'flex',gap:4,alignItems:'center',flexWrap:'wrap'}}>
+                    {pagesM.map((p,idx)=>p==='...'
+                      ?<span key={'e'+idx} style={{color:'#94a3b8',fontSize:12,padding:'0 2px'}}>…</span>
+                      :<button key={p} onClick={()=>setMapaPage(p)}
+                          style={{width:28,height:28,borderRadius:6,border:'1px solid',borderColor:mapaPage===p?'#6366f1':'#e2e8f0',background:mapaPage===p?'#6366f1':'#fff',color:mapaPage===p?'#fff':'#64748b',fontWeight:600,fontSize:12,cursor:'pointer'}}>
+                          {p+1}
+                        </button>
+                    )}
+                  </div>
+                  <button onClick={()=>setMapaPage(p=>Math.min(totalMapaPags-1,p+1))} disabled={mapaPage>=totalMapaPags-1} style={btnStyleM(mapaPage>=totalMapaPags-1)}>Próxima →</button>
+                </div>
+              )}
             </div>
+              );
+            })()}
           </>);
         })()}
       </div>
@@ -1969,25 +1997,37 @@
           )}
 
           {/* Keyword zone map table */}
+          {(()=>{
+            const [_mapaP,_setMapaP]=React.useState(0);
+            const kwsSorted2=[...kws].sort((a,b)=>b.volume-a.volume);
+            const MAPA_PER=10;
+            const totalMP=Math.ceil(kwsSorted2.length/MAPA_PER);
+            const btnSM=(disabled)=>({padding:'5px 14px',borderRadius:7,border:'1px solid #e2e8f0',background:disabled?'#f8fafc':'#fff',color:disabled?'#cbd5e1':'#374151',fontWeight:600,fontSize:12,cursor:disabled?'default':'pointer'});
+            const winMP=[];const dMP=3;
+            for(let i=0;i<totalMP;i++){if(i===0||i===totalMP-1||Math.abs(i-_mapaP)<=dMP)winMP.push(i);}
+            const pagesMP=[];let prevMP=-1;
+            winMP.forEach(i=>{if(prevMP>=0&&i-prevMP>1)pagesMP.push('...');pagesMP.push(i);prevMP=i;});
+            return(
           <div style={{background:'#fff',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
             <p style={{fontSize:13,fontWeight:700,color:'#1e293b',margin:'0 0 4px'}}>Mapa de Palavras-Chave</p>
-            <p style={{fontSize:11,color:'#94a3b8',margin:'0 0 16px'}}>Top {kws.length} keywords orgânicas · ordenadas por volume</p>
+            <p style={{fontSize:11,color:'#94a3b8',margin:'0 0 16px'}}>Top {kwsSorted2.length} keywords orgânicas · ordenadas por volume</p>
             <div style={{overflowX:'auto'}}>
               <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                 <thead>
                   <tr style={{background:'#f8fafc'}}>
-                    {['Keyword','Zona','Posição','Volume/mês','CPC (R$)','Página'].map(h=>(
+                    {['#','Keyword','Zona','Posição','Volume/mês','CPC (R$)','Página'].map(h=>(
                       <th key={h} style={{padding:'8px 12px',textAlign:'left',fontWeight:600,color:'#64748b',borderBottom:'1px solid #e2e8f0',whiteSpace:'nowrap'}}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {kws.sort((a,b)=>b.volume-a.volume).map((k,i)=>{
+                  {kwsSorted2.slice(_mapaP*MAPA_PER,(_mapaP+1)*MAPA_PER).map((k,i)=>{
                     const zona = k.posicao<=3?'Defender':k.posicao<=20?'Atacar':'Capturar';
                     const color=zonaColor[zona]; const bg=zonaBg[zona];
                     const page = k.url ? k.url.replace(/^https?:\/\/[^/]+/,'').replace(/\/$/,'') || '/' : '—';
                     return (
                       <tr key={i} style={{borderBottom:'1px solid #f1f5f9',background:i%2===0?'#fff':'#fafafa'}}>
+                        <td style={{padding:'8px 12px'}}><span style={{fontSize:11,fontWeight:700,color:'#cbd5e1'}}>{_mapaP*MAPA_PER+i+1}</span></td>
                         <td style={{padding:'8px 12px',fontWeight:600,color:'#1e293b'}}>{k.kw}</td>
                         <td style={{padding:'8px 12px'}}>
                           <span style={{background:bg,color,fontWeight:700,fontSize:11,padding:'2px 8px',borderRadius:20}}>{zona}</span>
@@ -2002,7 +2042,24 @@
                 </tbody>
               </table>
             </div>
+            {kwsSorted2.length>MAPA_PER&&(
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:12,paddingTop:12,borderTop:'1px solid #f1f5f9'}}>
+                <button onClick={()=>_setMapaP(p=>Math.max(0,p-1))} disabled={_mapaP===0} style={btnSM(_mapaP===0)}>← Anterior</button>
+                <div style={{display:'flex',gap:4,alignItems:'center',flexWrap:'wrap'}}>
+                  {pagesMP.map((p,idx)=>p==='...'
+                    ?<span key={'e'+idx} style={{color:'#94a3b8',fontSize:12,padding:'0 2px'}}>…</span>
+                    :<button key={p} onClick={()=>_setMapaP(p)}
+                        style={{width:28,height:28,borderRadius:6,border:'1px solid',borderColor:_mapaP===p?'#6366f1':'#e2e8f0',background:_mapaP===p?'#6366f1':'#fff',color:_mapaP===p?'#fff':'#64748b',fontWeight:600,fontSize:12,cursor:'pointer'}}>
+                        {p+1}
+                      </button>
+                  )}
+                </div>
+                <button onClick={()=>_setMapaP(p=>Math.min(totalMP-1,p+1))} disabled={_mapaP>=totalMP-1} style={btnSM(_mapaP>=totalMP-1)}>Próxima →</button>
+              </div>
+            )}
           </div>
+            );
+          })()}
 
         </div>
       );
@@ -2020,19 +2077,21 @@
       const smOk=!!(api?.semrush?.dominio?.keywords);
       const dataOk=gscOk||ga4Ok||smOk;
 
-      // GSC
+      // GSC — usa totais reais (query sem dimensão) para máxima precisão
+      const gscTotais=api?.gsc?.totais||null;
       const _gscHist=api?.gsc?.historico||[];
-      const gscImp=_gscHist.length ? _gscHist.reduce((s,t)=>s+t.impressoes,0) : (api?.gsc?.impressoes||0);
-      const gscCli=_gscHist.length ? _gscHist.reduce((s,t)=>s+t.cliques,0)   : (api?.gsc?.cliques||0);
+      const gscImp=gscTotais ? gscTotais.impressoes : (_gscHist.length ? _gscHist.reduce((s,t)=>s+t.impressoes,0) : 0);
+      const gscCli=gscTotais ? gscTotais.cliques    : (_gscHist.length ? _gscHist.reduce((s,t)=>s+t.cliques,0)   : 0);
+      const gscCtr=gscTotais ? gscTotais.ctr        : (gscImp>0?(gscCli/gscImp*100):0);
+      const gscPos=gscTotais ? gscTotais.posicao    : 0;
       const gscKws=api?.gsc?.keywords||[];
-      const gscCtr=gscImp>0?(gscCli/gscImp*100):(api?.gsc?.ctrMedio||0);
-      const gscPos=gscKws.length ? gscKws.reduce((s,k)=>s+k.posicao,0)/gscKws.length : (api?.gsc?.posicaoMedia||0);
 
-      // GA4
+      // GA4 — usa totais reais (query sem dimensão) para máxima precisão
+      const ga4Totais=api?.ga4?.totais||null;
       const ga4Canais=api?.ga4?.canais||[];
-      const ga4Total=ga4Canais.length ? ga4Canais.reduce((s,c)=>s+c.sessoes,0) : (api?.ga4?.totalSessoes||0);
-      const ga4Org=ga4Canais.length ? (ga4Canais.find(c=>c.canal==='Organic Search')?.sessoes||0) : (api?.ga4?.sessoes||0);
-      const ga4Bounce=ga4Canais.length&&ga4Total>0 ? ga4Canais.reduce((s,c)=>s+(c.bounce*(c.sessoes/ga4Total)),0) : (api?.ga4?.bounceRate||0);
+      const ga4Total=ga4Totais ? ga4Totais.sessoes : (ga4Canais.length ? ga4Canais.reduce((s,c)=>s+c.sessoes,0) : 0);
+      const ga4Bounce=ga4Totais ? ga4Totais.bounce : (ga4Canais.length&&ga4Total>0 ? ga4Canais.reduce((s,c)=>s+(c.bounce*(c.sessoes/ga4Total)),0) : 0);
+      const ga4Org=ga4Canais.filter(c=>/organic/i.test(c.canal||'')).reduce((s,c)=>s+c.sessoes,0);
       const orgRatio=ga4Total>0?(ga4Org/ga4Total*100):0;
 
       // SEMrush — deduplica por melhor posição
@@ -2051,7 +2110,7 @@
 
       // === SCORES DINÂMICOS ===
       const sCtr=gscCtr>5?35:gscCtr>3?28:gscCtr>2?20:gscCtr>1?12:5;
-      const sPos=gscPos<3?28:gscPos<5?22:gscPos<10?15:gscPos<20?8:3;
+      const sPos=gscPos>0?(gscPos<5?28:gscPos<10?22:gscPos<15?15:gscPos<20?8:3):0;
       const sDef=smDef.length>=5?22:smDef.length>=3?16:smDef.length>=1?10:3;
       const sAtak=Math.min(15,smAtacar.length*2);
       const seoScore=gscOk?Math.min(100,Math.round(sCtr+sPos+sDef+sAtak)):0;
@@ -2377,7 +2436,7 @@
             <span style={{fontSize:16}}>{dataOk?'✅':'⏳'}</span>
             <span style={{fontSize:13,fontWeight:600,color:dataOk?'#065f46':'#92400e'}}>
               {dataOk
-                ? [gscOk&&`GSC (${gscImp.toLocaleString('pt-BR')} impressões · ${gscCli.toLocaleString('pt-BR')} cliques)`,ga4Ok&&`GA4 (${ga4Total.toLocaleString('pt-BR')} sessões)`,smOk&&`SEMrush (${smTotal.toLocaleString('pt-BR')} keywords)`].filter(Boolean).join(' + ')
+                ? [gscOk&&`GSC (${gscImp.toLocaleString('pt-BR')} impressões · ${gscCli.toLocaleString('pt-BR')} cliques · pos. ${gscPos.toFixed(1)})`,ga4Ok&&`GA4 (${ga4Total.toLocaleString('pt-BR')} sessões · ${ga4Bounce.toFixed(1)}% bounce)`,smOk&&`SEMrush (${smTotal.toLocaleString('pt-BR')} keywords)`].filter(Boolean).join(' + ')
                 : 'Aguardando dados…'}
             </span>
             {!smOk&&dataOk&&<span style={{fontSize:11,background:'#fffbeb',color:'#92400e',padding:'2px 10px',borderRadius:20,border:'1px solid #fde68a'}}>SEMrush não conectado</span>}
