@@ -40,6 +40,51 @@
 </head>
 <body>
   <div id="root"></div>
+  <script>
+  // ── Login simples ──────────────────────────────────
+  (function(){
+    const USUARIO = 'growth.helena@helena.app';
+    const SENHA   = 'Growthhelena26.';
+    const KEY     = 'painel_auth';
+    if (sessionStorage.getItem(KEY) === 'ok') return;
+    document.body.style.display='none';
+    const overlay = document.createElement('div');
+    overlay.style.cssText='position:fixed;inset:0;background:#f8fafc;display:flex;align-items:center;justify-content:center;z-index:9999;font-family:Inter,sans-serif';
+    overlay.innerHTML=`
+      <div style="background:#fff;border-radius:16px;border:1px solid #e2e8f0;box-shadow:0 8px 32px rgba(0,0,0,.08);padding:40px 36px;width:340px;text-align:center">
+        <div style="width:52px;height:52px;background:#eef2ff;border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;font-size:26px">🔒</div>
+        <h2 style="margin:0 0 6px;font-size:20px;font-weight:700;color:#0f172a">Painel de Marketing</h2>
+        <p style="margin:0 0 24px;font-size:13px;color:#64748b">Helena CRM · Acesso restrito</p>
+        <input id="login-user" type="text" placeholder="Usuário" autocomplete="username"
+          style="width:100%;box-sizing:border-box;padding:11px 14px;border:1px solid #e2e8f0;border-radius:9px;font-size:14px;font-family:Inter,sans-serif;outline:none;margin-bottom:10px;color:#0f172a"/>
+        <input id="login-senha" type="password" placeholder="Senha" autocomplete="current-password"
+          style="width:100%;box-sizing:border-box;padding:11px 14px;border:1px solid #e2e8f0;border-radius:9px;font-size:14px;font-family:Inter,sans-serif;outline:none;margin-bottom:12px;color:#0f172a"/>
+        <button id="login-btn"
+          style="width:100%;padding:11px;background:#6366f1;color:#fff;border:none;border-radius:9px;font-size:14px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif">
+          Entrar
+        </button>
+        <p id="login-erro" style="margin:10px 0 0;font-size:12px;color:#ef4444;display:none">Usuário ou senha incorretos. Tente novamente.</p>
+      </div>`;
+    document.body.appendChild(overlay);
+    function tentar(){
+      const u=document.getElementById('login-user').value.trim();
+      const v=document.getElementById('login-senha').value;
+      if(u===USUARIO && v===SENHA){
+        sessionStorage.setItem(KEY,'ok');
+        overlay.remove();
+        document.body.style.display='';
+      } else {
+        document.getElementById('login-erro').style.display='block';
+        document.getElementById('login-senha').value='';
+        document.getElementById('login-senha').focus();
+      }
+    }
+    document.getElementById('login-btn').onclick=tentar;
+    document.getElementById('login-senha').addEventListener('keydown',function(e){if(e.key==='Enter')tentar();});
+    document.getElementById('login-user').addEventListener('keydown',function(e){if(e.key==='Enter')document.getElementById('login-senha').focus();});
+    setTimeout(()=>{ document.body.style.display=''; overlay.style.display='flex'; },100);
+  })();
+  </script>
   <script type="text/babel">
   window.addEventListener('load', function() {
     const { useState, useMemo, useRef, useEffect } = React;
