@@ -462,6 +462,8 @@
     ══════════════════════════════════════════════ */
 
     const AbaLeads=({de,ate,tipo,api})=>{
+      const [funilPage,setFunilPage]=useState(0);
+      const FUNIL_PER_PAGE=6;
       const ld = api?.leads || {};
 
       // Convert Date to YYYYMM key for period filtering
