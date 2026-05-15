@@ -1,0 +1,2802 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Painel de Marketing — Helena</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script>tailwind.config={theme:{extend:{fontFamily:{sans:['Inter','sans-serif']}}}}</script>
+  <style>
+    *{box-sizing:border-box}
+    body{font-family:'Inter',sans-serif;background:#f8fafc;margin:0}
+    ::-webkit-scrollbar{width:5px;height:5px}
+    ::-webkit-scrollbar-track{background:#f1f5f9}
+    ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px}
+    .card{background:#fff;border-radius:12px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,.05);transition:box-shadow .2s}
+    .card:hover{box-shadow:0 4px 14px rgba(0,0,0,.08)}
+    .tab-a{border-bottom:2.5px solid #6366f1;color:#6366f1;font-weight:600}
+    .tab-i{border-bottom:2.5px solid transparent;color:#64748b}
+    .tab-i:hover{color:#374151;border-bottom-color:#e2e8f0}
+    .pill-a{background:#fff;color:#6366f1;box-shadow:0 1px 3px rgba(0,0,0,.12);font-weight:600}
+    .pill-i{color:#64748b}
+    .pill-i:hover{color:#374151}
+    input[type=date]{border:1px solid #e2e8f0;border-radius:8px;padding:5px 10px;font-size:12px;font-family:'Inter',sans-serif;color:#374151;background:#fff;cursor:pointer}
+    input[type=date]:focus{outline:none;border-color:#6366f1;box-shadow:0 0 0 3px rgba(99,102,241,.1)}
+    .badge-up{color:#059669;background:#ecfdf5;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700}
+    .badge-dn{color:#ef4444;background:#fef2f2;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:700}
+    .badge-green{color:#065f46;background:#ecfdf5;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
+    .badge-amber{color:#92400e;background:#fffbeb;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
+    .badge-red{color:#991b1b;background:#fef2f2;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
+    .badge-gray{color:#475569;background:#f1f5f9;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
+    .badge-indigo{color:#4338ca;background:#eef2ff;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
+    .opp-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #f8fafc}
+    .opp-row:last-child{border-bottom:none}
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+  window.addEventListener('load', function() {
+    const { useState, useMemo, useRef, useEffect } = React;
+
+    /* ══════════════════════════════════════════════
+       SAMPLE DATA
+    ══════════════════════════════════════════════ */
+
+    const TODAY = new Date(); TODAY.setHours(0,0,0,0);
+    const seed  = n => { let x=Math.sin(n+1)*10000; return x-Math.floor(x); };
+
+    // Leads — tipo só vem da planilha Helena CRM
+    const ALL_LEADS = (() => {
+      const canais=['Google Ads','Meta Ads','SEO','E-mail','Direto','Indicação'];
+      const tipos =['cliente_final','white_label'];
+      const status=['novo','contato','qualificado','mql','venda','perdido'];
+      const arr=[];
+      for(let i=0;i<912;i++){
+        const d=new Date(TODAY); d.setDate(d.getDate()-Math.floor(seed(i)*90));
+        const canal=canais[Math.floor(seed(i*3)*canais.length)];
+        arr.push({id:i+1,data:d,nome:`Lead ${i+1}`,
+          origem:['Google Ads','Meta Ads'].includes(canal)?'ads':'organico',
+          canal,tipo:tipos[Math.floor(seed(i*7)*2)],status:status[Math.floor(seed(i*11)*6)]});
+      }
+      return arr.sort((a,b)=>b.data-a.data);
+    })();
+
+    const MONTHLY_LEADS=[
+      {mes:'Jun/25',cf:48,wl:24},{mes:'Jul/25',cf:52,wl:27},{mes:'Ago/25',cf:61,wl:29},
+      {mes:'Set/25',cf:58,wl:32},{mes:'Out/25',cf:74,wl:38},{mes:'Nov/25',cf:69,wl:41},
+      {mes:'Dez/25',cf:63,wl:35},{mes:'Jan/26',cf:81,wl:44},{mes:'Fev/26',cf:88,wl:47},
+      {mes:'Mar/26',cf:94,wl:52},{mes:'Abr/26',cf:102,wl:57},{mes:'Mai/26',cf:110,wl:61},
+    ];
+
+    // SEO — sem separação por tipo de cliente
+    const SEO_SEMANAS=(() => {
+      const r=[];
+      for(let i=11;i>=0;i--){
+        const d=new Date(TODAY); d.setDate(d.getDate()-i*7);
+        r.push({sem:d.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}),
+          impressoes:7200+Math.floor(seed(i*2)*4000)+(11-i)*220,
+          cliques:360+Math.floor(seed(i*5)*180)+(11-i)*12});
+      }
+      return r;
+    })();
+
+    const TOP_KWS=[
+      {kw:'marketing para escritório contábil', pos:1.4,vol:960, cli:341,var:+12},
+      {kw:'marketing digital para contadores',  pos:1.9,vol:960, cli:328,var:+8},
+      {kw:'agência white label marketing',      pos:2.1,vol:590, cli:198,var:+21},
+      {kw:'white label marketing',              pos:2.8,vol:720, cli:229,var:-3},
+      {kw:'agência de marketing digital',       pos:3.2,vol:2400,cli:187,var:+5},
+      {kw:'gestão de redes sociais white label',pos:3.5,vol:480, cli:112,var:+14},
+      {kw:'terceirização de marketing',         pos:4.7,vol:1300,cli:143,var:-7},
+      {kw:'estratégia de conteúdo b2b',         pos:5.1,vol:1100,cli:89, var:+2},
+    ];
+
+    // Palavras-chave de marca (branded)
+    const BRAND_KWS=[
+      {kw:'helena crm',             pos:1.0,vol:320,cli:298,var:+18},
+      {kw:'helena crm marketing',   pos:1.1,vol:210,cli:187,var:+24},
+      {kw:'helenacrm.com.br',       pos:1.0,vol:180,cli:174,var:+11},
+      {kw:'helena marketing crm',   pos:1.3,vol:140,cli:119,var:+31},
+      {kw:'helena crm white label', pos:1.6,vol: 90,cli: 72,var:+42},
+    ];
+
+    // Páginas — top e bottom
+    const TOP_PAGINAS=[
+      {url:'/blog/marketing-para-contadores',  ses:2340,bounce:'42%',tempo:'3:21',var:+18},
+      {url:'/white-label',                     ses:1820,bounce:'38%',tempo:'4:02',var:+9},
+      {url:'/blog/terceirizacao-marketing',    ses:1540,bounce:'51%',tempo:'2:45',var:+22},
+      {url:'/',                                ses:1290,bounce:'61%',tempo:'1:52',var:-4},
+      {url:'/servicos',                        ses: 980,bounce:'44%',tempo:'3:10',var:+6},
+      {url:'/blog/seo-para-pme',               ses: 870,bounce:'47%',tempo:'3:38',var:+33},
+    ];
+
+    const BOTTOM_PAGINAS=[
+      {url:'/cases',              ses: 87,bounce:'74%',tempo:'1:02',opp:'Adicionar CTAs e links internos'},
+      {url:'/sobre',              ses:102,bounce:'68%',tempo:'1:18',opp:'Otimizar para palavras-chave de marca'},
+      {url:'/blog/email-mkt-b2b', ses:114,bounce:'71%',tempo:'1:31',opp:'Atualizar conteúdo e adicionar links'},
+      {url:'/parceiros',          ses: 63,bounce:'82%',tempo:'0:48',opp:'Revisar estrutura e proposta de valor'},
+      {url:'/contato',            ses:198,bounce:'79%',tempo:'0:54',opp:'Simplificar formulário de contato'},
+    ];
+
+    // Oportunidades de crescimento (alta impressão, baixo CTR)
+    const OPORTUNIDADES=[
+      {url:'/blog/crm-para-marketing', impr:4200,ctr:1.2,pos:6.8,potencial:'alto',acao:'Melhorar title tag e meta description'},
+      {url:'/servicos/ads',            impr:3800,ctr:1.8,pos:5.2,potencial:'alto',acao:'Criar conteúdo mais específico sobre ads'},
+      {url:'/blog/automacao-marketing',impr:2900,ctr:2.1,pos:7.1,potencial:'médio',acao:'Subir posição com backlinks internos'},
+      {url:'/white-label/precos',      impr:2400,ctr:1.4,pos:8.3,potencial:'alto',acao:'Página de preço clara com CTA forte'},
+      {url:'/blog/leads-b2b',          impr:1980,ctr:2.4,pos:6.4,potencial:'médio',acao:'Revisar H1 e introdução do artigo'},
+    ];
+
+    // Dispositivos e canais de aquisição
+    const DEVICES=[
+      {name:'Desktop',value:58,color:'#6366f1'},
+      {name:'Mobile', value:34,color:'#10b981'},
+      {name:'Tablet', value: 8,color:'#f59e0b'},
+    ];
+
+    const CANAIS_AQUISICAO=[
+      {name:'Orgânico',   value:42,color:'#10b981'},
+      {name:'Direto',     value:22,color:'#6366f1'},
+      {name:'Referência', value:16,color:'#f59e0b'},
+      {name:'Pago',       value:12,color:'#8b5cf6'},
+      {name:'Social',     value: 5,color:'#06b6d4'},
+      {name:'E-mail',     value: 3,color:'#ef4444'},
+    ];
+
+    // E-mail
+    const CAMPANHAS=[
+      {nome:'Proposta White Label',      ab:71.3,cli:34.6,desc:0.2,env: 560},
+      {nome:'Boas-vindas - Onboarding',  ab:62.4,cli:28.1,desc:0.4,env:1240},
+      {nome:'Lançamento Serviço SEO',    ab:49.8,cli:22.4,desc:0.5,env:1680},
+      {nome:'Case Study: Escritório XYZ',ab:44.2,cli:19.8,desc:0.3,env: 980},
+      {nome:'Newsletter Maio 2026',      ab:38.7,cli:12.3,desc:0.8,env:3420},
+      {nome:'Sequência Nutrição #3',     ab:35.6,cli:14.1,desc:0.7,env: 890},
+      {nome:'Nutrição - Topo de Funil',  ab:31.2,cli: 8.7,desc:1.2,env:2100},
+      {nome:'Reengajamento Inativos',    ab:18.9,cli: 4.2,desc:2.1,env:1850},
+    ].sort((a,b)=>b.ab-a.ab);
+
+    const JORNADA=[
+      {etapa:'Topo de Funil', ab:33.4,cli:9.1, conv:3.2},
+      {etapa:'Meio de Funil', ab:48.7,cli:21.4,conv:8.6},
+      {etapa:'Fundo de Funil',ab:67.3,cli:31.2,conv:18.4},
+    ];
+
+    // Funil
+    const FUNIL_ETAPAS=[
+      {nome:'Visitantes',val:24800,cor:'#6366f1'},
+      {nome:'Leads',     val:  912,cor:'#7c3aed'},
+      {nome:'MQLs',      val:  334,cor:'#a855f7'},
+      {nome:'Vendas',    val:   72,cor:'#10b981'},
+    ];
+    const FUNIL_MENSAL=[
+      {mes:'Fev',vis:18200,leads:610,mqls:198,vendas:42},
+      {mes:'Mar',vis:20400,leads:692,mqls:241,vendas:51},
+      {mes:'Abr',vis:22600,leads:748,mqls:278,vendas:58},
+      {mes:'Mai',vis:24800,leads:912,mqls:334,vendas:72},
+    ];
+    const FUNIL_ORIGEM=[
+      {etapa:'Leads', ads:408,org:504},
+      {etapa:'MQLs',  ads:132,org:202},
+      {etapa:'Vendas',ads: 27,org: 45},
+    ];
+    const AI_DICAS=[
+      {ic:'🎯',t:'Personalize o assunto',d:'Campanhas com nome do lead têm +26% abertura. Experimente "[Nome], sua estratégia de marketing está pronta?"'},
+      {ic:'⏰',t:'Melhor horário de envio',d:'Suas 3 campanhas de maior abertura foram enviadas terça-feira entre 9h–11h. Padronize esse horário.'},
+      {ic:'📊',t:'Segmente por tipo de cliente',d:'E-mails para White Label têm abertura 18% maior. Crie jornadas separadas para cada perfil.'},
+      {ic:'✉️',t:'Reduza a sequência de nutrição',d:'Fluxos de 3 e-mails convertem 2.4× mais que campanhas únicas. Teste encurtar o fluxo de topo.'},
+    ];
+
+    /* ══════════════════════════════════════════════
+       DADOS — ESTRATÉGIA & IA
+    ══════════════════════════════════════════════ */
+
+    const SCORES=[
+      {area:'Leads',  score:72,trend:+12,status:'bom',  desc:'Crescimento sólido, mas conversão de MQL pode melhorar'},
+      {area:'SEO',    score:68,trend:+14,status:'bom',  desc:'Bom tráfego orgânico; CTR e páginas de cauda longa são gaps'},
+      {area:'E-mail', score:81,trend:+3, status:'ótimo',desc:'Taxa de abertura acima da média do mercado (38,7%)'},
+      {area:'Funil',  score:58,trend:+7, status:'atenção',desc:'Conversão Leads → MQL de 36,6% é o maior gargalo'},
+    ];
+
+    const GANHOS_RAPIDOS=[
+      {p:1,impacto:'alto',esforco:'baixo',canal:'SEO',
+       acao:'Otimizar title tag e meta description das 5 páginas com impressões > 2k e CTR < 2%',
+       prazo:'1–2 semanas',potencial:'+25–35% de cliques orgânicos sem novo conteúdo'},
+      {p:2,impacto:'alto',esforco:'baixo',canal:'E-mail',
+       acao:'Separar listas de CF e WL e criar assuntos segmentados para cada campanha ativa',
+       prazo:'Semana 1',potencial:'+18% abertura e +12% CTR em média'},
+      {p:3,impacto:'alto',esforco:'médio',canal:'Funil',
+       acao:'Criar página /white-label/precos com tabela clara, FAQ e CTA forte',
+       prazo:'2–3 semanas',potencial:'+30% conversão de leads WL para reunião'},
+      {p:4,impacto:'médio',esforco:'baixo',canal:'Leads',
+       acao:'Ativar sequência de reengajamento para leads parados há > 30 dias (base estimada: ~200 leads)',
+       prazo:'Semana 2',potencial:'+35–45 leads reativados/mês'},
+      {p:5,impacto:'médio',esforco:'baixo',canal:'SEO',
+       acao:'Adicionar CTAs internos e links para /servicos e /white-label dentro dos 3 posts do blog com mais tráfego',
+       prazo:'Semana 1',potencial:'+15% tráfego para páginas de conversão'},
+    ];
+
+    const MEDIO_PRAZO=[
+      {canal:'E-mail',acao:'Construir fluxo de nutrição exclusivo para White Label (5 e-mails, 21 dias)',impacto:'↑ 35% conversão WL'},
+      {canal:'SEO',acao:'Link building interno: conectar blog → /white-label, /servicos e /contato em posts de alto tráfego',impacto:'↑ rankeamento páginas de serviço'},
+      {canal:'Conteúdo',acao:'Transformar /cases em estudos de caso interativos com números reais de clientes',impacto:'↓ bounce de 74% → <50%'},
+      {canal:'Funil',acao:'Implementar lead scoring automático para priorizar os MQLs de maior potencial de fechamento',impacto:'↑ 20% taxa de fechamento'},
+      {canal:'Ads',acao:'Testar Google Ads para branded keywords e concorrentes diretos (budget protegido)',impacto:'Protege posição + captura demanda ativa'},
+      {canal:'SEO',acao:'Publicar 4 artigos otimizados para palavras-chave com posição 5–10 e volume > 500/mês',impacto:'↑ 15–20% tráfego blog'},
+    ];
+
+    const LONGO_PRAZO=[
+      {canal:'SEO/Conteúdo',acao:'Estratégia pilar-cluster: 3 páginas-pilar + 10 artigos satélite cada (ex: "marketing white label")',impacto:'Autoridade de domínio e tráfego composto'},
+      {canal:'WL',acao:'Programa estruturado de parcerias White Label com portal, materiais e comissionamento',impacto:'Canal de aquisição escalável e recorrente'},
+      {canal:'Funil/Analytics',acao:'Atribuição multi-touch: entender quais canais realmente geram fechamento',impacto:'Redistribuição eficiente de budget'},
+      {canal:'Awareness',acao:'Lançar webinar ou masterclass mensal gratuita para contador/agência parceira',impacto:'Geração de leads quentes + autoridade'},
+      {canal:'Produto',acao:'Co-criar landing pages específicas por nicho (escritório contábil, clínica, e-commerce)',impacto:'↑ conversão orgânica por segmento'},
+    ];
+
+    const ALERTAS=[
+      {nivel:'alto',ic:'🔴',msg:'Funil: apenas 36,6% dos leads viram MQL — abaixo do benchmark de 45% para SaaS/serviços'},
+      {nivel:'alto',ic:'🔴',msg:'Página /cases com 87 sessões e bounce de 74% — prova social não está chegando ao público certo'},
+      {nivel:'médio',ic:'🟡',msg:'Taxa de descadastro de 2,1% na campanha de reengajamento acima do limite aceitável (1,5%)'},
+      {nivel:'médio',ic:'🟡',msg:'CTR médio de 1,4–2,4% nas páginas de oportunidade indica gap técnico em snippets'},
+      {nivel:'info',ic:'🔵',msg:'Mobile representa 34% das sessões mas pode não estar convertendo — verificar formulários e CTAs mobile'},
+      {nivel:'info',ic:'🔵',msg:'Canais Referência (16%) e E-mail (3%) têm potencial inexplorado para parcerias e base atual'},
+    ];
+
+    /* ══════════════════════════════════════════════
+       API — Google Apps Script
+    ══════════════════════════════════════════════ */
+
+    const API_URL='https://script.google.com/macros/s/AKfycbwBZOxWDRorND_UcRk2xLtFvE4HEV9wiK1z46S3uDyp0GuzJ2Hx4sMLA6DUR29BV60d/exec';
+
+    /* ══════════════════════════════════════════════
+       UTILITÁRIOS
+    ══════════════════════════════════════════════ */
+
+    const fmt  = n => new Intl.NumberFormat('pt-BR').format(n);
+    const pct  = n => `${Number(n).toFixed(1)}%`;
+    const conv = (a,b) => pct(b/a*100);
+    const CORES= ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4'];
+    const fmtDate = d => d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'});
+    const toInput = d => d.toISOString().slice(0,10);
+
+    const filtrarLeads = (leads,de,ate,tipo) =>
+      leads.filter(l => l.data>=de && l.data<=ate && (tipo==='all'||l.tipo===tipo));
+
+    const exportarCSV = (dados,nome) => {
+      if(!dados.length) return;
+      const keys=Object.keys(dados[0]);
+      const csv=[keys.join(','),...dados.map(r=>keys.map(k=>`"${r[k] instanceof Date?r[k].toLocaleDateString('pt-BR'):r[k]}"`).join(','))].join('\n');
+      Object.assign(document.createElement('a'),{
+        href:URL.createObjectURL(new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8;'})),download:nome
+      }).click();
+    };
+
+    /* ══════════════════════════════════════════════
+       CHART.JS COMPONENTS
+    ══════════════════════════════════════════════ */
+
+    const TTstyle={backgroundColor:'#1e293b',titleFont:{family:'Inter',size:12,weight:'600'},
+      bodyFont:{family:'Inter',size:11},padding:10,cornerRadius:8};
+
+    function useChart(ref,config,deps){
+      const cRef=useRef(null);
+      useEffect(()=>{
+        if(!ref.current) return;
+        if(cRef.current) cRef.current.destroy();
+        cRef.current=new Chart(ref.current,config);
+        return ()=>{ if(cRef.current){cRef.current.destroy();cRef.current=null;} };
+      },deps);
+    }
+
+    const DonutChart=({data,h=220})=>{
+      const ref=useRef(null);
+      useChart(ref,{type:'doughnut',
+        data:{labels:data.map(d=>d.name),datasets:[{data:data.map(d=>d.value),
+          backgroundColor:data.map(d=>d.color),borderWidth:2,borderColor:'#fff',hoverOffset:6}]},
+        options:{responsive:true,maintainAspectRatio:false,cutout:'62%',
+          plugins:{legend:{position:'right',labels:{font:{family:'Inter',size:11},color:'#64748b',
+            padding:12,usePointStyle:true,pointStyleWidth:8,
+            generateLabels:chart=>{const ds=chart.data.datasets[0];
+              const tot=ds.data.reduce((s,v)=>s+v,0)||1;
+              return chart.data.labels.map((l,i)=>({text:`${l}: ${fmt(ds.data[i])} (${(ds.data[i]/tot*100).toFixed(1)}%)`,
+                fillStyle:ds.backgroundColor[i],strokeStyle:'#fff',lineWidth:1,hidden:false,index:i,pointStyle:'circle'}))
+                .filter((_,i)=>ds.data[i]>0);}}},
+            tooltip:{...TTstyle,callbacks:{label:ctx=>{const tot=ctx.dataset.data.reduce((s,v)=>s+v,0)||1;return ` ${ctx.label}: ${fmt(ctx.raw)} (${(ctx.raw/tot*100).toFixed(1)}%)`;}}}}}
+      },[JSON.stringify(data)]);
+      return <canvas ref={ref} style={{maxHeight:h}} />;
+    };
+
+    const BarChart2=({labels,datasets,h=250,unit='',stacked=false})=>{
+      const ref=useRef(null);
+      useChart(ref,{type:'bar',
+        data:{labels,datasets:datasets.map(d=>({...d,borderRadius:stacked?2:4,borderSkipped:false,
+          barThickness:Math.max(8,Math.min(28,300/labels.length))}))},
+        options:{responsive:true,maintainAspectRatio:false,
+          scales:{x:{stacked,grid:{display:false},ticks:{font:{family:'Inter',size:11},color:'#94a3b8'}},
+            y:{stacked,grid:{color:'#f1f5f9'},ticks:{font:{family:'Inter',size:11},color:'#94a3b8',callback:v=>v+unit}}},
+          plugins:{legend:{labels:{font:{family:'Inter',size:12},color:'#64748b',usePointStyle:true,pointStyleWidth:8}},
+            tooltip:TTstyle}}
+      },[JSON.stringify({labels,datasets,stacked})]);
+      return <canvas ref={ref} style={{maxHeight:h}} />;
+    };
+
+    const LineChart2=({labels,datasets,h=250})=>{
+      const ref=useRef(null);
+      useChart(ref,{type:'line',
+        data:{labels,datasets:datasets.map(d=>({...d,tension:0.4,pointRadius:4,pointHoverRadius:6,borderWidth:2.5}))},
+        options:{responsive:true,maintainAspectRatio:false,
+          scales:{x:{grid:{display:false},ticks:{font:{family:'Inter',size:11},color:'#94a3b8'}},
+            y:{grid:{color:'#f1f5f9'},ticks:{font:{family:'Inter',size:11},color:'#94a3b8'}}},
+          plugins:{legend:{labels:{font:{family:'Inter',size:12},color:'#64748b',usePointStyle:true,pointStyleWidth:8}},
+            tooltip:TTstyle}}
+      },[JSON.stringify({labels,datasets})]);
+      return <canvas ref={ref} style={{maxHeight:h}} />;
+    };
+
+    const AreaChart2=({labels,datasets,h=250})=>{
+      const ref=useRef(null);
+      useChart(ref,{type:'line',
+        data:{labels,datasets:datasets.map(d=>({...d,tension:0.4,fill:true,pointRadius:3,pointHoverRadius:5,borderWidth:2}))},
+        options:{responsive:true,maintainAspectRatio:false,
+          scales:{x:{grid:{display:false},ticks:{font:{family:'Inter',size:11},color:'#94a3b8'}},
+            y1:{type:'linear',position:'left',grid:{color:'#f1f5f9'},ticks:{font:{family:'Inter',size:11},color:'#94a3b8'}},
+            y2:{type:'linear',position:'right',grid:{drawOnChartArea:false},ticks:{font:{family:'Inter',size:11},color:'#94a3b8'}}},
+          plugins:{legend:{labels:{font:{family:'Inter',size:12},color:'#64748b',usePointStyle:true,pointStyleWidth:8}},
+            tooltip:TTstyle}}
+      },[JSON.stringify({labels,datasets})]);
+      return <canvas ref={ref} style={{maxHeight:h}} />;
+    };
+
+    /* ══════════════════════════════════════════════
+       UI COMPONENTS
+    ══════════════════════════════════════════════ */
+
+    const IBG={indigo:'#eef2ff',green:'#ecfdf5',amber:'#fffbeb',purple:'#f5f3ff',cyan:'#ecfeff',red:'#fef2f2'};
+    const ITC={indigo:'#4338ca',green:'#047857',amber:'#b45309',purple:'#7c3aed',cyan:'#0e7490',red:'#b91c1c'};
+
+    const InfoTip=({texto})=>{
+      const [show,setShow]=React.useState(false);
+      return (
+        <span style={{position:'relative',display:'inline-flex',alignItems:'center',verticalAlign:'middle'}}>
+          <span onMouseEnter={()=>setShow(true)} onMouseLeave={()=>setShow(false)}
+            style={{display:'inline-flex',alignItems:'center',justifyContent:'center',
+              width:14,height:14,borderRadius:'50%',background:'#e2e8f0',color:'#64748b',
+              fontSize:8,fontWeight:800,cursor:'help',marginLeft:5,flexShrink:0,
+              lineHeight:1,userSelect:'none',transition:'background .15s'
+            }}>i</span>
+          {show&&(
+            <div style={{position:'absolute',bottom:'calc(100% + 8px)',left:'50%',transform:'translateX(-50%)',
+              background:'#1e293b',color:'#cbd5e1',fontSize:11,lineHeight:1.55,
+              padding:'10px 13px',borderRadius:9,width:240,zIndex:999,
+              boxShadow:'0 4px 20px rgba(0,0,0,.3)',pointerEvents:'none',whiteSpace:'normal'}}>
+              <div style={{position:'absolute',bottom:-5,left:'50%',transform:'translateX(-50%)',
+                width:10,height:6,background:'#1e293b',clipPath:'polygon(0 0,100% 0,50% 100%)'}}/>
+              {texto}
+            </div>
+          )}
+        </span>
+      );
+    };
+
+    const MetricCard=({title,value,sub,trend,cor='indigo',icon,info})=>(
+      <div className="card" style={{padding:20}}>
+        <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between'}}>
+          <p style={{fontSize:10,fontWeight:700,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'.06em',margin:0}}>
+            {title}{info&&<InfoTip texto={info}/>}
+          </p>
+          {icon&&<div style={{background:IBG[cor],color:ITC[cor],padding:7,borderRadius:8,display:'flex'}}>{icon}</div>}
+        </div>
+        <p style={{fontSize:26,fontWeight:800,color:'#0f172a',margin:'6px 0 2px'}}>{value}</p>
+        {sub&&<p style={{fontSize:11,color:'#94a3b8',margin:0}}>{sub}</p>}
+        {trend!==undefined&&(
+          <span className={trend>=0?'badge-up':'badge-dn'} style={{display:'inline-block',marginTop:6}}>
+            {trend>=0?'↑':'↓'} {Math.abs(trend)}% vs. anterior
+          </span>
+        )}
+      </div>
+    );
+
+    const Bloco=({titulo,sub,children,csvDados,csvNome,info})=>(
+      <div className="card" style={{padding:20}}>
+        <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:16}}>
+          <div>
+            <h4 style={{fontSize:13,fontWeight:700,color:'#1e293b',margin:0}}>
+              {titulo}{info&&<InfoTip texto={info}/>}
+            </h4>
+            {sub&&<p style={{fontSize:11,color:'#94a3b8',margin:'2px 0 0'}}>{sub}</p>}
+          </div>
+          {csvDados&&<button onClick={()=>exportarCSV(csvDados,csvNome)}
+            style={{fontSize:11,border:'1px solid #c7d2fe',color:'#6366f1',background:'none',borderRadius:7,padding:'4px 10px',cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>
+            ↓ CSV</button>}
+        </div>
+        {children}
+      </div>
+    );
+
+    const Svg=({d,s=18})=><svg style={{width:s,height:s}} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={d}/></svg>;
+    const IUsers=()=><Svg d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>;
+    const IAds=()=><Svg d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"/>;
+    const IOrg=()=><Svg d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>;
+    const IWL=()=><Svg d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>;
+    const IEye=()=><Svg d="M15 12a3 3 0 11-6 0 3 3 0 016 0zM2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>;
+    const IClick=()=><Svg d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5"/>;
+    const IMail=()=><Svg d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>;
+    const IChart=()=><Svg d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>;
+    const IDl=()=><Svg d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>;
+    const ICal=()=><Svg d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>;
+
+    /* ══════════════════════════════════════════════
+       TABELA PADRÃO
+    ══════════════════════════════════════════════ */
+
+    const Tabela=({cols,rows,renderRow})=>(
+      <div style={{overflowX:'auto'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+          <thead><tr style={{borderBottom:'1px solid #f1f5f9'}}>
+            {cols.map((c,i)=>(
+              <th key={i} style={{padding:'8px 12px',fontSize:10,fontWeight:700,color:'#94a3b8',
+                textTransform:'uppercase',textAlign:c.right?'right':'left'}}>{c.label}</th>
+            ))}
+          </tr></thead>
+          <tbody>{rows.map((r,i)=>(
+            <tr key={i} style={{borderBottom:'1px solid #f8fafc'}}>{renderRow(r,i)}</tr>
+          ))}</tbody>
+        </table>
+      </div>
+    );
+
+    const Td=({children,right,mono,bold})=>(
+      <td style={{padding:'9px 12px',textAlign:right?'right':'left',
+        fontFamily:mono?'monospace':'Inter',fontSize:mono?12:13,
+        fontWeight:bold?700:400,color:bold?'#0f172a':'#374151'}}>{children}</td>
+    );
+
+    /* ══════════════════════════════════════════════
+       ABA 1 — LEADS
+       ⚠ Segmentação CF/WL só da planilha Helena CRM
+    ══════════════════════════════════════════════ */
+
+    const AbaLeads=({de,ate,tipo,api})=>{
+      const ld = api?.leads || {};
+
+      // Convert Date to YYYYMM key for period filtering
+      const toMK = d => d ? String(d.getFullYear()) + String(d.getMonth()+1).padStart(2,'0') : '';
+      const startKey = toMK(de);
+      const endKey   = toMK(ate);
+
+      // All months (for trend charts — always full history)
+      const allMonths = ld.porMes || [];
+
+      // Filter porMes by selected period (for totals/cards only)
+      const filteredMonths = allMonths.filter(m =>
+        (!startKey || m.mesKey >= startKey) && (!endKey || m.mesKey <= endKey)
+      );
+
+      // Sum all metric fields from filtered months
+      const sum = f => filteredMonths.reduce((s,m) => s+(m[f]||0), 0);
+      const total    = sum('total');
+      const leadCnt  = sum('lead');
+      const mqlCnt   = sum('mql');
+      const sqlCnt   = sum('sql');
+      const wl       = sum('wl');
+      const cf       = sum('cf');
+      const pago     = sum('pago');
+      const organico = sum('organico');
+      const cfLead   = sum('cf_lead');
+      const cfMql    = sum('cf_mql');
+      const cfSql    = sum('cf_sql');
+      const wlLead   = sum('wl_lead');
+      const wlMql    = sum('wl_mql');
+      const wlSql    = sum('wl_sql');
+
+      // Canal breakdown from porCanalMes filtered by period
+      const canalMapFull = {};
+      (ld.porCanalMes||[])
+        .filter(c => (!startKey || c.mesKey >= startKey) && (!endKey || c.mesKey <= endKey))
+        .forEach(c => {
+          if (!canalMapFull[c.canal]) canalMapFull[c.canal] = { count:0, cf:0, wl:0, mql:0, sql:0, tipoOrigem: c.tipoOrigem };
+          const e = canalMapFull[c.canal];
+          e.count += c.count; e.cf += (c.cf||0); e.wl += (c.wl||0);
+          e.mql   += (c.mql||0); e.sql += (c.sql||0);
+        });
+      const canaisPie = Object.entries(canalMapFull)
+        .sort((a,b) => b[1].count - a[1].count)
+        .map(([name,v],i) => ({name, value:v.count, cf:v.cf, wl:v.wl, mql:v.mql, sql:v.sql, tipoOrigem:v.tipoOrigem, color:CORES[i%CORES.length]}));
+
+      const tipoPie = [
+        {name:'Cliente Final', value:cf, color:'#6366f1'},
+        {name:'White Label',   value:wl, color:'#10b981'},
+      ];
+
+      const monthlyData = allMonths; // sempre histórico completo nos gráficos
+
+      // Filter recentes by exact date range
+      const parseData = s => { if(!s) return null; const [d,m,y]=s.split('/'); return new Date(+y,+m-1,+d); };
+      const deTime  = de  ? new Date(de.getFullYear(), de.getMonth(), de.getDate()).getTime() : null;
+      const ateTime = ate ? new Date(ate.getFullYear(),ate.getMonth(),ate.getDate(),23,59,59).getTime() : null;
+      const recentes = (ld.recentes||[]).filter(l => {
+        const d = parseData(l.data); if(!d) return true;
+        if(deTime  && d.getTime() < deTime)  return false;
+        if(ateTime && d.getTime() > ateTime) return false;
+        return true;
+      });
+
+      const hasLeads = allMonths.length > 0;
+
+      // porCanal e porConteudo (disponíveis após atualização do Apps Script)
+      const porCanal    = ld.porCanal    || [];
+      const porConteudo = ld.porConteudo || [];
+
+      // Tipo de origem por canal (pago vs orgânico) do porCanalMes
+      const canalTipoMap = {};
+      (ld.porCanalMes||[]).forEach(c => { canalTipoMap[c.canal] = c.tipoOrigem; });
+
+      // MoM: último mês vs penúltimo dentro do período filtrado
+      const sortedMo = [...filteredMonths].sort((a,b) => a.mesKey > b.mesKey ? 1 : -1);
+      const lastMo = sortedMo[sortedMo.length-1];
+      const prevMo = sortedMo[sortedMo.length-2];
+      const momPct = lastMo && prevMo && prevMo.total > 0
+        ? ((lastMo.total - prevMo.total) / prevMo.total * 100) : null;
+
+      // Taxas de qualidade do período filtrado
+      const cfConvRate  = cf > 0  ? (cfMql+cfSql)/cf*100   : 0;
+      const wlConvRate  = wl > 0  ? (wlMql+wlSql)/wl*100   : 0;
+      const cfSqlRate   = cf > 0  ? cfSql/cf*100            : 0;
+      const wlSqlRate   = wl > 0  ? wlSql/wl*100            : 0;
+      const overallConv = total > 0 ? (mqlCnt+sqlCnt)/total*100 : 0;
+
+      // Insights automáticos baseados nos dados reais
+      const autoInsights = [];
+      if (momPct !== null) {
+        if (momPct >= 5)  autoInsights.push({ic:'📈',cor:'#059669',bg:'#ecfdf5',bdr:'#bbf7d0',txt:`Leads cresceram +${momPct.toFixed(1)}% em ${lastMo.mes} vs ${prevMo.mes} — tendência positiva.`});
+        else if (momPct <= -5) autoInsights.push({ic:'📉',cor:'#dc2626',bg:'#fef2f2',bdr:'#fecaca',txt:`Leads caíram ${momPct.toFixed(1)}% em ${lastMo.mes} — investigar causa e ajustar acionamentos.`});
+      }
+      if (total > 0 && overallConv < 25) autoInsights.push({ic:'⚠️',cor:'#d97706',bg:'#fffbeb',bdr:'#fde68a',txt:`Taxa MQL+SQL de ${overallConv.toFixed(1)}% está abaixo do ideal (≥25%). Revisar qualificação no CRM.`});
+      if (cf > 0 && wl > 0) {
+        if (wlConvRate > cfConvRate + 8) autoInsights.push({ic:'💡',cor:'#6366f1',bg:'#eef2ff',bdr:'#c7d2fe',txt:`WL converte ${wlConvRate.toFixed(1)}% vs CF ${cfConvRate.toFixed(1)}% — leads de parceiros têm qualidade superior. Priorize WL.`});
+        if (cfConvRate > wlConvRate + 8) autoInsights.push({ic:'💡',cor:'#6366f1',bg:'#eef2ff',bdr:'#c7d2fe',txt:`CF converte ${cfConvRate.toFixed(1)}% vs WL ${wlConvRate.toFixed(1)}% — Cliente Final está mais qualificado. Aumentar volume CF.`});
+      }
+      if (canaisPie.length > 0 && total > 0 && canaisPie[0].value/total > 0.55) autoInsights.push({ic:'🔴',cor:'#dc2626',bg:'#fef2f2',bdr:'#fecaca',txt:`${canaisPie[0].name} concentra ${((canaisPie[0].value/total)*100).toFixed(0)}% dos leads — dependência alta. Diversifique canais.`});
+      if (pago > 0 && organico > 0 && organico/total > 0.6) autoInsights.push({ic:'🌱',cor:'#059669',bg:'#ecfdf5',bdr:'#bbf7d0',txt:`${((organico/total)*100).toFixed(0)}% dos leads são orgânicos — SEO e conteúdo funcionam. Considere escalar com ads.`});
+      if (porConteudo.length === 0 && hasLeads) autoInsights.push({ic:'🔧',cor:'#6366f1',bg:'#eef2ff',bdr:'#c7d2fe',txt:`Atualize o Apps Script para ver quais campanhas e páginas geram mais leads CF vs WL.`});
+
+      return (
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+
+          {hasLeads
+            ? <div style={{background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:10,padding:'9px 14px',display:'flex',gap:8,alignItems:'center'}}>
+                <span style={{fontSize:14}}>✅</span>
+                <p style={{fontSize:12,fontWeight:600,color:'#166534',margin:0}}>Dados reais · {fmt(total)} leads da planilha HelenaCRM · {fmtDate(de)} – {fmtDate(ate)}</p>
+              </div>
+            : <div style={{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:10,padding:'10px 14px',display:'flex',gap:10,alignItems:'flex-start'}}>
+                <span style={{fontSize:16}}>📋</span>
+                <div>
+                  <p style={{fontSize:12,fontWeight:600,color:'#92400e',margin:0}}>Conectando planilha HelenaCRM…</p>
+                  <p style={{fontSize:11,color:'#a16207',margin:'2px 0 0'}}>Aguarde o carregamento dos dados reais de leads.</p>
+                </div>
+              </div>
+          }
+
+          {/* Totais */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(145px,1fr))',gap:12}}>
+            <MetricCard title="Total de Leads"  value={fmt(total)}    sub={`${fmtDate(de)} – ${fmtDate(ate)}`} cor="indigo" icon={<IUsers/>}
+              info="Total de leads válidos no período (etiqueta CF ou WL no CRM). Fonte: Planilha Helena CRM."/>
+            <MetricCard title="Cliente Final"   value={fmt(cf)}       sub={pct(total?cf/total*100:0)+' do total'}       cor="indigo" icon={<IUsers/>}
+              info="Leads com etiqueta 'LEAD CLIENTE FINAL' no CRM. Período: filtro selecionado."/>
+            <MetricCard title="White Label"     value={fmt(wl)}       sub={pct(total?wl/total*100:0)+' do total'}       cor="amber"  icon={<IWL/>}
+              info="Leads com etiqueta '4'LEAD P WHITE LABEL' no CRM — parceiros e revendedores. Período: filtro selecionado."/>
+            <MetricCard title="Via Ads (Pago)"  value={fmt(pago)}     sub={pct(total?pago/total*100:0)+' do total'}     cor="purple" icon={<IAds/>}
+              info="Meta: campanha com _SM_/_IG_/_LP_/_INT., IA/WL ou ID numérico. Google Ads: anúncio preenchido (WhiteLabel1/2), campanha WL/WL2. Instagram: campanha ≠ PLANOS."/>
+            <MetricCard title="Via Orgânico"    value={fmt(organico)} sub={pct(total?organico/total*100:0)+' do total'} cor="green"  icon={<IOrg/>}
+              info="Linktree, ChatGPT, Widget (sempre orgânico). Google sem anúncio/WL. Instagram com PLANOS ou sem campanha. Qualquer origem sem padrão de ads."/>
+          </div>
+
+          {/* Funil por Tipo — CF × WL */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+            {[
+              {label:'Cliente Final', tot:cf, l:cfLead, m:cfMql, s:cfSql, cor:'#6366f1', bg:'#eef2ff', bgS:'#ecfdf5', bgM:'#eef2ff'},
+              {label:'White Label',   tot:wl, l:wlLead, m:wlMql, s:wlSql, cor:'#10b981', bg:'#f0fdf4', bgS:'#ecfdf5', bgM:'#f0fdf4'},
+            ].map(({label,tot,l,m,s,cor})=>(
+              <div key={label} className="card" style={{padding:16}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:12}}>
+                  <div>
+                    <p style={{fontSize:11,fontWeight:700,color:'#64748b',textTransform:'uppercase',letterSpacing:'.05em',margin:0}}>{label}</p>
+                    <p style={{fontSize:22,fontWeight:800,color:'#0f172a',margin:'4px 0 0'}}>{fmt(tot)}</p>
+                  </div>
+                  <span style={{fontSize:11,background:'#f1f5f9',color:'#475569',padding:'3px 8px',borderRadius:6,fontWeight:600}}>{pct(total?tot/total*100:0)}</span>
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:6}}>
+                  {[['LEAD',l,'#64748b','#f8fafc'],['MQL',m,'#4338ca','#eef2ff'],['SQL',s,'#065f46','#ecfdf5']].map(([st,n,tc,bg])=>(
+                    <div key={st} style={{textAlign:'center',padding:'8px 4px',background:bg,borderRadius:8}}>
+                      <p style={{fontSize:9,fontWeight:700,color:tc,textTransform:'uppercase',letterSpacing:'.06em',margin:'0 0 3px'}}>{st}</p>
+                      <p style={{fontSize:18,fontWeight:800,color:'#0f172a',margin:0}}>{fmt(n)}</p>
+                      <p style={{fontSize:10,color:'#94a3b8',margin:'2px 0 0'}}>{pct(tot?n/tot*100:0)}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Donuts */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))',gap:12}}>
+            <Bloco titulo="Origem dos Leads" sub="Distribuição por canal de aquisição" csvDados={canaisPie} csvNome="leads-por-canal.csv"
+              info="Baseado em UTM/Origem + UTM/Conteúdo da planilha. Direto = leads sem UTM rastreado (WhatsApp, acesso direto, entrada manual no CRM). Período: filtro selecionado.">
+              <DonutChart data={canaisPie} h={220}/>
+            </Bloco>
+            <Bloco titulo="Tipo de Lead" sub="Cliente Final vs White Label · HelenaCRM" csvDados={tipoPie} csvNome="leads-por-tipo.csv"
+              info="Classificação pelas tags do CRM: White Label = parceiros/revendedores; demais = Cliente Final. Um lead pode ser CF ou WL, nunca os dois. Período: filtro selecionado.">
+              <DonutChart data={tipoPie} h={220}/>
+            </Bloco>
+          </div>
+
+          {/* Evolução mensal — Opção A: dois gráficos empilhados */}
+          {monthlyData.length>0 && (<>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+              <Bloco titulo="Cliente Final · Evolução Mensal" sub="Barras empilhadas por estágio do funil" csvDados={monthlyData} csvNome="cf-evolucao.csv"
+                info="Evolução mensal de leads CF por estágio do funil: LEAD (contato), MQL (qualificado pelo marketing), SQL (qualificado para vendas). Exibe histórico completo — não apenas o período selecionado.">
+                <BarChart2 stacked
+                  labels={monthlyData.map(d=>d.mes)}
+                  datasets={[
+                    {label:'LEAD', data:monthlyData.map(d=>d.cf_lead||0), backgroundColor:'#cbd5e1'},
+                    {label:'MQL',  data:monthlyData.map(d=>d.cf_mql||0),  backgroundColor:'#6366f1'},
+                    {label:'SQL',  data:monthlyData.map(d=>d.cf_sql||0),  backgroundColor:'#312e81'},
+                  ]} h={220}/>
+              </Bloco>
+              <Bloco titulo="White Label · Evolução Mensal" sub="Barras empilhadas por estágio do funil" csvDados={monthlyData} csvNome="wl-evolucao.csv"
+                info="Evolução mensal de leads WL por estágio do funil: LEAD (contato), MQL (qualificado), SQL (pronto para vendas). Parceiros e revendedores. Histórico completo exibido.">
+                <BarChart2 stacked
+                  labels={monthlyData.map(d=>d.mes)}
+                  datasets={[
+                    {label:'LEAD', data:monthlyData.map(d=>d.wl_lead||0), backgroundColor:'#6ee7b7'},
+                    {label:'MQL',  data:monthlyData.map(d=>d.wl_mql||0),  backgroundColor:'#10b981'},
+                    {label:'SQL',  data:monthlyData.map(d=>d.wl_sql||0),  backgroundColor:'#065f46'},
+                  ]} h={220}/>
+              </Bloco>
+            </div>
+
+            {/* Opção B: Tabela heatmap */}
+            <Bloco titulo="Funil por Mês — Visão Detalhada" sub="Intensidade de cor proporcional ao volume · CF = índigo · WL = verde" csvDados={monthlyData} csvNome="funil-mensal.csv"
+              info="Tabela com todos os meses históricos. Meses dentro do período selecionado são destacados com ● verde. A linha 'Período selecionado' soma apenas os meses filtrados.">
+              {(()=>{
+                const cols=[
+                  {key:'cf_lead',label:'CF · LEAD',color:'#6366f1'},
+                  {key:'cf_mql', label:'CF · MQL', color:'#4338ca'},
+                  {key:'cf_sql', label:'CF · SQL', color:'#312e81'},
+                  {key:'wl_lead',label:'WL · LEAD',color:'#10b981'},
+                  {key:'wl_mql', label:'WL · MQL', color:'#059669'},
+                  {key:'wl_sql', label:'WL · SQL', color:'#065f46'},
+                ];
+                // mais recente primeiro
+                const sortedData=[...monthlyData].reverse();
+                const totalPagsF=Math.ceil(sortedData.length/FUNIL_PER_PAGE);
+                const pageData=sortedData.slice(funilPage*FUNIL_PER_PAGE,(funilPage+1)*FUNIL_PER_PAGE);
+                const maxes={};
+                cols.forEach(c=>{ maxes[c.key]=Math.max(...monthlyData.map(m=>m[c.key]||0),1); });
+                const toHex=n=>Math.round(n).toString(16).padStart(2,'0');
+                const cellBg=(val,max,color)=>color+toHex(Math.max(0.1,val/max)*220);
+                const cellFg=(val,max)=>val/max>0.45?'#fff':'#1e293b';
+                const btnSF=(disabled)=>({padding:'5px 14px',borderRadius:7,border:'1px solid #e2e8f0',background:disabled?'#f8fafc':'#fff',color:disabled?'#cbd5e1':'#374151',fontWeight:600,fontSize:12,cursor:disabled?'default':'pointer'});
+                // janela de páginas
+                const winF=[];const deltaF=3;
+                for(let i=0;i<totalPagsF;i++){if(i===0||i===totalPagsF-1||Math.abs(i-funilPage)<=deltaF)winF.push(i);}
+                const pagesF=[];let prevF=-1;
+                winF.forEach(i=>{if(prevF>=0&&i-prevF>1)pagesF.push('...');pagesF.push(i);prevF=i;});
+                return (
+                  <>
+                  <div style={{overflowX:'auto'}}>
+                    <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                      <thead>
+                        <tr style={{borderBottom:'2px solid #f1f5f9'}}>
+                          <th style={{padding:'8px 12px',textAlign:'left',color:'#94a3b8',fontWeight:600,fontSize:11,whiteSpace:'nowrap'}}>Mês</th>
+                          {cols.map(c=>(
+                            <th key={c.key} style={{padding:'8px 10px',textAlign:'center',color:c.color,fontWeight:700,fontSize:11,whiteSpace:'nowrap'}}>{c.label}</th>
+                          ))}
+                          <th style={{padding:'8px 10px',textAlign:'center',color:'#94a3b8',fontWeight:600,fontSize:11}}>Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pageData.map((m,i)=>{
+                          const inPeriod = (!startKey||m.mesKey>=startKey)&&(!endKey||m.mesKey<=endKey);
+                          return (
+                          <tr key={i} style={{borderBottom:'1px solid #f8fafc',background:inPeriod?'#fafffe':'#fff'}}>
+                            <td style={{padding:'8px 12px',fontWeight:600,color:inPeriod?'#0f172a':'#94a3b8',whiteSpace:'nowrap'}}>
+                              {m.mes}{inPeriod&&<span style={{fontSize:9,marginLeft:5,color:'#10b981',fontWeight:700}}>●</span>}
+                            </td>
+                            {cols.map(c=>{
+                              const val=m[c.key]||0;
+                              return (
+                                <td key={c.key} style={{padding:'5px 8px',textAlign:'center'}}>
+                                  <span style={{
+                                    display:'inline-block',minWidth:46,padding:'5px 8px',borderRadius:7,
+                                    background:cellBg(val,maxes[c.key],c.color),
+                                    color:cellFg(val,maxes[c.key]),fontWeight:700,fontSize:12
+                                  }}>{fmt(val)}</span>
+                                </td>
+                              );
+                            })}
+                            <td style={{padding:'5px 10px',textAlign:'center',fontWeight:700,color:inPeriod?'#0f172a':'#94a3b8',fontSize:13}}>{fmt(m.total||0)}</td>
+                          </tr>
+                          );
+                        })}
+                        <tr style={{borderTop:'2px solid #e2e8f0',background:'#f8fafc'}}>
+                          <td style={{padding:'8px 12px',fontWeight:700,color:'#0f172a',fontSize:13}}>
+                            <span style={{fontSize:9,color:'#10b981',marginRight:4}}>●</span>Período selecionado
+                          </td>
+                          {cols.map(c=>{
+                            const tot=filteredMonths.reduce((s,m)=>s+(m[c.key]||0),0);
+                            return (
+                              <td key={c.key} style={{padding:'5px 8px',textAlign:'center'}}>
+                                <span style={{
+                                  display:'inline-block',minWidth:46,padding:'5px 8px',borderRadius:7,
+                                  background:c.color,color:'#fff',fontWeight:700,fontSize:12
+                                }}>{fmt(tot)}</span>
+                              </td>
+                            );
+                          })}
+                          <td style={{padding:'5px 10px',textAlign:'center',fontWeight:800,color:'#0f172a',fontSize:13}}>{fmt(filteredMonths.reduce((s,m)=>s+(m.total||0),0))}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  {sortedData.length>FUNIL_PER_PAGE&&(
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:12,paddingTop:12,borderTop:'1px solid #f1f5f9'}}>
+                      <button onClick={()=>setFunilPage(p=>Math.max(0,p-1))} disabled={funilPage===0} style={btnSF(funilPage===0)}>← Anterior</button>
+                      <div style={{display:'flex',gap:4,alignItems:'center',flexWrap:'wrap'}}>
+                        {pagesF.map((p,idx)=>p==='...'
+                          ?<span key={'e'+idx} style={{color:'#94a3b8',fontSize:12,padding:'0 2px'}}>…</span>
+                          :<button key={p} onClick={()=>setFunilPage(p)}
+                              style={{width:28,height:28,borderRadius:6,border:'1px solid',borderColor:funilPage===p?'#6366f1':'#e2e8f0',background:funilPage===p?'#6366f1':'#fff',color:funilPage===p?'#fff':'#64748b',fontWeight:600,fontSize:12,cursor:'pointer'}}>
+                              {p+1}
+                            </button>
+                        )}
+                      </div>
+                      <button onClick={()=>setFunilPage(p=>Math.min(totalPagsF-1,p+1))} disabled={funilPage>=totalPagsF-1} style={btnSF(funilPage>=totalPagsF-1)}>Próxima →</button>
+                    </div>
+                  )}
+                  </>
+                );
+              })()}
+            </Bloco>
+          </>)}
+
+          {/* ── INSIGHTS AUTOMÁTICOS ──────────────────── */}
+          {autoInsights.length > 0 && (
+            <div className="card" style={{padding:20}}>
+              <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
+                <div style={{background:'#1e293b',borderRadius:9,padding:'6px 8px',display:'flex'}}>
+                  <svg style={{width:16,height:16}} fill="none" stroke="#fff" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                  </svg>
+                </div>
+                <div>
+                  <h4 style={{fontSize:13,fontWeight:700,color:'#1e293b',margin:0}}>Insights Automáticos</h4>
+                  <p style={{fontSize:11,color:'#94a3b8',margin:'2px 0 0'}}>Gerados a partir dos dados reais da planilha Helena CRM</p>
+                </div>
+              </div>
+              <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                {autoInsights.map((ins,i)=>(
+                  <div key={i} style={{display:'flex',gap:10,alignItems:'flex-start',padding:'10px 12px',background:ins.bg,border:`1px solid ${ins.bdr}`,borderRadius:10}}>
+                    <span style={{fontSize:16,flexShrink:0}}>{ins.ic}</span>
+                    <p style={{fontSize:12,color:ins.cor,fontWeight:500,margin:0,lineHeight:1.55}}>{ins.txt}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── QUALIDADE POR CANAL ───────────────────── */}
+          {canaisPie.length > 0 && (
+            <Bloco titulo="Desempenho por Canal" sub="Volume, tipo e conversão por canal de aquisição" csvDados={canaisPie} csvNome="canais-desempenho.csv"
+              info="Canal com tipoOrigem Pago = UTM rastreado sem espaços ou origem SITE. Orgânico = sem código de campanha. Conversão = MQL+SQL quando disponível (requer atualização do Apps Script).">
+              <div style={{overflowX:'auto'}}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                  <thead>
+                    <tr style={{borderBottom:'2px solid #f1f5f9'}}>
+                      {[{l:'#'},{l:'Canal'},{l:'Tipo'},{l:'Leads',r:true},{l:'% Total',r:true},{l:'CF',r:true},{l:'WL',r:true},{l:'MQL+SQL%',r:true}].map((h,i)=>(
+                        <th key={i} style={{padding:'8px 10px',textAlign:h.r?'right':'left',color:'#94a3b8',fontWeight:600,fontSize:11,whiteSpace:'nowrap'}}>{h.l}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {canaisPie.map((item,i)=>{
+                      const tipo = item.tipoOrigem || 'organico';
+                      const convRate = item.value > 0 ? ((item.mql+item.sql)/item.value*100).toFixed(1) : null;
+                      const convColor = convRate === null ? '#94a3b8' : parseFloat(convRate)>=30?'#059669':parseFloat(convRate)>=15?'#d97706':'#dc2626';
+                      return (
+                        <tr key={i} style={{borderBottom:'1px solid #f8fafc',background:i%2===0?'#fff':'#fafafa'}}>
+                          <td style={{padding:'8px 10px',color:'#cbd5e1',fontWeight:700,fontSize:11}}>{i+1}</td>
+                          <td style={{padding:'8px 10px'}}>
+                            <div style={{display:'flex',alignItems:'center',gap:8}}>
+                              <span style={{width:8,height:8,borderRadius:'50%',background:item.color,flexShrink:0,display:'inline-block'}}/>
+                              <span style={{fontWeight:600,color:'#0f172a'}}>{item.name}</span>
+                            </div>
+                          </td>
+                          <td style={{padding:'8px 10px'}}>
+                            <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,
+                              background:tipo==='pago'?'#f5f3ff':'#ecfdf5',color:tipo==='pago'?'#7c3aed':'#047857'}}>
+                              {tipo==='pago'?'Pago':'Orgânico'}
+                            </span>
+                          </td>
+                          <td style={{padding:'8px 10px',textAlign:'right',fontWeight:700,color:'#0f172a'}}>{fmt(item.value)}</td>
+                          <td style={{padding:'8px 10px',textAlign:'right',color:'#64748b'}}>
+                            <div style={{display:'flex',alignItems:'center',justifyContent:'flex-end',gap:6}}>
+                              <div style={{width:50,height:5,background:'#f1f5f9',borderRadius:3,overflow:'hidden'}}>
+                                <div style={{height:'100%',width:`${total?item.value/total*100:0}%`,background:item.color,borderRadius:3}}/>
+                              </div>
+                              <span style={{fontSize:11,minWidth:34,textAlign:'right'}}>{pct(total?item.value/total*100:0)}</span>
+                            </div>
+                          </td>
+                          <>
+                            <td style={{padding:'8px 10px',textAlign:'right',color:'#6366f1',fontWeight:600}}>{fmt(item.cf||0)}</td>
+                            <td style={{padding:'8px 10px',textAlign:'right',color:'#10b981',fontWeight:600}}>{fmt(item.wl||0)}</td>
+                            <td style={{padding:'8px 10px',textAlign:'right'}}>
+                              {convRate !== null
+                                ? <span style={{fontWeight:700,color:convColor}}>{convRate}%</span>
+                                : <span style={{color:'#e2e8f0'}}>—</span>}
+                            </td>
+                          </>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </Bloco>
+          )}
+
+          {/* ── PERFORMANCE DE CAMPANHAS / PÁGINAS ───── */}
+          {porConteudo.length > 0 ? (
+            <Bloco titulo="Performance de Campanhas / Páginas" sub="Quais UTM/conteúdos geram mais leads CF vs WL" csvDados={porConteudo.slice(0,50)} csvNome="campanhas-utm.csv"
+              info="Agrupado por UTM/Conteúdo da planilha. Identifica quais campanhas e páginas de origem geram Cliente Final vs White Label, e a taxa de qualificação (MQL+SQL).">
+              {(()=>{
+                // filtra por período e agrega por nome de campanha
+                const aggMap = {};
+                porConteudo
+                  .filter(c => (!startKey || c.mesKey >= startKey) && (!endKey || c.mesKey <= endKey))
+                  .forEach(c => {
+                    if (!aggMap[c.conteudo]) aggMap[c.conteudo] = {
+                      conteudo: c.conteudo, canal: c.canal, tipoOrigem: c.tipoOrigem,
+                      total:0, cf:0, wl:0, lead:0, mql:0, sql:0,
+                    };
+                    const a = aggMap[c.conteudo];
+                    a.total += c.total; a.cf += c.cf; a.wl += c.wl;
+                    a.lead  += c.lead;  a.mql += c.mql; a.sql += c.sql;
+                  });
+                const top = Object.values(aggMap).sort((a,b) => b.total - a.total).slice(0,20);
+                const maxV = top[0]?.total || 1;
+                return (
+                  <div style={{overflowX:'auto'}}>
+                    <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                      <thead>
+                        <tr style={{borderBottom:'2px solid #f1f5f9'}}>
+                          {['#','Campanha / UTM Conteúdo','Canal','CF','WL','Total','CF%','MQL+SQL%'].map((h,i)=>(
+                            <th key={i} style={{padding:'8px 10px',textAlign:i>2?'right':'left',color:'#94a3b8',fontWeight:600,fontSize:11,whiteSpace:'nowrap'}}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {top.map((c,i)=>{
+                          const cfPct  = c.total>0 ? c.cf/c.total*100 : 0;
+                          const conv   = c.total>0 ? (c.mql+c.sql)/c.total*100 : 0;
+                          const convCor= conv>=30?'#059669':conv>=15?'#d97706':'#dc2626';
+                          const isDireto = c.conteudo === 'Direto';
+                          return (
+                            <tr key={i} style={{borderBottom:'1px solid #f8fafc',background:i%2===0?'#fff':'#fafafa'}}>
+                              <td style={{padding:'8px 10px',color:'#cbd5e1',fontWeight:700,fontSize:11}}>{i+1}</td>
+                              <td style={{padding:'8px 10px',maxWidth:220}}>
+                                <div style={{display:'flex',alignItems:'center',gap:6}}>
+                                  <span style={{fontFamily:'monospace',fontSize:11,background:'#f1f5f9',padding:'2px 7px',borderRadius:5,color:'#374151',fontWeight:600}}>{c.conteudo}</span>
+                                </div>
+                                <div style={{marginTop:4,height:3,background:'#f1f5f9',borderRadius:2,overflow:'hidden'}}>
+                                  <div style={{height:'100%',width:`${c.total/maxV*100}%`,background:cfPct>60?'#6366f1':'#10b981',borderRadius:2}}/>
+                                </div>
+                              </td>
+                              <td style={{padding:'8px 10px',color:'#64748b',fontSize:11,whiteSpace:'nowrap'}}>{c.canal}</td>
+                              <td style={{padding:'8px 10px',textAlign:'right',color:'#6366f1',fontWeight:700}}>{fmt(c.cf)}</td>
+                              <td style={{padding:'8px 10px',textAlign:'right',color:'#10b981',fontWeight:700}}>{fmt(c.wl)}</td>
+                              <td style={{padding:'8px 10px',textAlign:'right',fontWeight:700,color:'#0f172a'}}>{fmt(c.total)}</td>
+                              <td style={{padding:'8px 10px',textAlign:'right'}}>
+                                <div style={{display:'flex',alignItems:'center',justifyContent:'flex-end',gap:4}}>
+                                  <div style={{width:30,height:4,background:'#eef2ff',borderRadius:2,overflow:'hidden'}}>
+                                    <div style={{height:'100%',width:`${cfPct}%`,background:'#6366f1',borderRadius:2}}/>
+                                  </div>
+                                  <span style={{color:'#6366f1',fontWeight:600,fontSize:11}}>{cfPct.toFixed(0)}%</span>
+                                </div>
+                              </td>
+                              <td style={{padding:'8px 10px',textAlign:'right',fontWeight:700,color:convCor}}>{conv.toFixed(1)}%</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
+            </Bloco>
+          ) : hasLeads && (
+            <div className="card" style={{padding:20,border:'1px dashed #c7d2fe',background:'#fafbff'}}>
+              <div style={{display:'flex',gap:14,alignItems:'flex-start'}}>
+                <div style={{background:'#eef2ff',borderRadius:10,padding:10,flexShrink:0}}>
+                  <svg style={{width:20,height:20,color:'#6366f1'}} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/>
+                  </svg>
+                </div>
+                <div>
+                  <p style={{fontSize:13,fontWeight:700,color:'#3730a3',margin:'0 0 4px'}}>Performance de Campanhas disponível após atualização do Apps Script</p>
+                  <p style={{fontSize:12,color:'#6366f1',margin:'0 0 10px',lineHeight:1.5}}>
+                    Adicione <code style={{background:'#e0e7ff',padding:'1px 5px',borderRadius:4}}>porCanal</code> e <code style={{background:'#e0e7ff',padding:'1px 5px',borderRadius:4}}>porConteudo</code> ao <code style={{background:'#e0e7ff',padding:'1px 5px',borderRadius:4}}>buscarLeads()</code> para ver quais campanhas e páginas geram mais leads CF vs WL, taxa de MQL, SQL por campanha.
+                  </p>
+                  <p style={{fontSize:11,color:'#818cf8',margin:0}}>Veja as instruções de atualização do Apps Script na seção Estratégia & IA.</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+
+          {/* Leads recentes */}
+          {recentes.length>0 && (
+            <Bloco titulo="Leads Recentes" sub="Últimos contatos registrados no CRM">
+              <div style={{overflowX:'auto'}}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                  <thead>
+                    <tr style={{borderBottom:'2px solid #f1f5f9'}}>
+                      {['Nome','Canal','Tipo','Status','Data'].map(h=>(
+                        <th key={h} style={{textAlign:'left',padding:'6px 10px',color:'#64748b',fontWeight:600}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentes.slice(0,25).map((l,i)=>(
+                      <tr key={i} style={{borderBottom:'1px solid #f8fafc',background:i%2===0?'#fff':'#fafafa'}}>
+                        <td style={{padding:'7px 10px',fontWeight:500,color:'#0f172a'}}>{l.nome||'—'}</td>
+                        <td style={{padding:'7px 10px',color:'#475569'}}>{l.canal}</td>
+                        <td style={{padding:'7px 10px'}}>
+                          <span className={l.tipo==='white_label'?'badge-amber':'badge-indigo'}>
+                            {l.tipo==='white_label'?'White Label':'Cliente Final'}
+                          </span>
+                        </td>
+                        <td style={{padding:'7px 10px'}}>
+                          <span className={l.isSql?'badge-green':l.isMql?'badge-indigo':'badge-gray'}>
+                            {l.isSql?'SQL':l.isMql?'MQL':'LEAD'}
+                          </span>
+                        </td>
+                        <td style={{padding:'7px 10px',color:'#94a3b8',fontSize:11}}>{l.data}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Bloco>
+          )}
+        </div>
+      );
+    };
+
+    /* ══════════════════════════════════════════════
+       ABA 2 — SEO (enriquecida para growth)
+    ══════════════════════════════════════════════ */
+
+    const AbaSEO=({api,diasApi=90})=>{
+      const [kwPage,setKwPage]=useState(0);
+      const [brandPage,setBrandPage]=useState(0);
+      const [origPage,setOrigPage]=useState(0);
+      const KW_PER_PAGE=10;
+      const gscOk = !!(api?.gsc && !api.gsc.erro && (api.gsc.keywords?.length||api.gsc.historico?.length));
+      const ga4Ok = !!(api?.ga4 && !api.ga4.erro && api.ga4.canais?.length);
+
+      // GSC — métricas (usa totais reais da query sem dimensão; fallback para soma do histórico)
+      const gscTot  = gscOk&&api.gsc.totais ? api.gsc.totais : null;
+      const tlImpr  = gscTot ? gscTot.impressoes : (gscOk&&api.gsc.historico?.length ? api.gsc.historico.reduce((s,t)=>s+t.impressoes,0) : null);
+      const tlCli   = gscTot ? gscTot.cliques    : (gscOk&&api.gsc.historico?.length ? api.gsc.historico.reduce((s,t)=>s+t.cliques,0)   : null);
+      const ctrStr  = gscTot ? gscTot.ctr.toFixed(1)+'%'   : (tlImpr ? (tlCli/tlImpr*100).toFixed(1)+'%' : (gscOk?'—':'4,9%'));
+      const posStr  = gscTot ? gscTot.posicao.toFixed(1)+'°' : (gscOk&&api.gsc.keywords?.length ? (api.gsc.keywords.reduce((s,k)=>s+k.posicao,0)/api.gsc.keywords.length).toFixed(1)+'°' : (gscOk?'—':'3,4°'));
+      const imprStr = tlImpr ? (tlImpr>=1000?(tlImpr/1000).toFixed(1)+'K':String(tlImpr)) : (gscOk?'—':'87,4K');
+      const cliStr  = tlCli  ? fmt(tlCli) : (gscOk?'—':'4.280');
+
+      // GA4 — métricas (usa totais reais sem dimensão; fallback para soma dos canais)
+      const ga4Tot  = ga4Ok&&api.ga4.totais ? api.ga4.totais : null;
+      const totalSes= ga4Tot ? ga4Tot.sessoes : (ga4Ok ? api.ga4.canais.reduce((s,c)=>s+c.sessoes,0) : null);
+      const orgSes  = ga4Ok ? api.ga4.canais.filter(c=>/organic/i.test(c.canal||'')).reduce((s,c)=>s+c.sessoes,0) : null;
+      const novosN  = ga4Tot ? ga4Tot.novosUsuarios : (ga4Ok ? api.ga4.canais.reduce((s,c)=>s+c.novosUsuarios,0) : null);
+      const bounceS = ga4Tot ? ga4Tot.bounce.toFixed(1)+'%' : (ga4Ok&&totalSes ? (api.ga4.canais.reduce((s,c)=>s+(c.bounce*(c.sessoes/totalSes)),0)).toFixed(1)+'%' : (ga4Ok?'—':'46,2%'));
+      const novosS  = totalSes&&novosN ? (novosN/totalSes*100).toFixed(1)+'%' : (ga4Ok?'—':'68,4%');
+      const sesStr  = orgSes!==null ? fmt(orgSes) : (ga4Ok?'—':'12.840');
+
+      // Gráfico timeline
+      const timeline = gscOk&&api.gsc.historico?.length
+        ? api.gsc.historico.slice(-90).map(t=>({sem:t.data.slice(5),impressoes:t.impressoes,cliques:t.cliques}))
+        : (gscOk?[]:SEO_SEMANAS);
+
+      // Keywords
+      const kwRows = gscOk&&api.gsc.keywords?.length
+        ? api.gsc.keywords.map(k=>({kw:k.query,pos:k.posicao,vol:k.impressoes,cli:k.cliques,ctr:k.ctr,var:0}))
+        : (gscOk?[]:TOP_KWS);
+      const brandKwRows = gscOk&&api.gsc.keywords?.length
+        ? api.gsc.keywords.filter(k=>k.query.toLowerCase().includes('helena')).map(k=>({kw:k.query,pos:k.posicao,vol:k.impressoes,cli:k.cliques,ctr:k.ctr,var:0}))
+        : (gscOk?[]:BRAND_KWS);
+
+      // Dispositivos
+      const colDev={desktop:'#6366f1',mobile:'#10b981',tablet:'#f59e0b'};
+      const devData = ga4Ok&&api.ga4.dispositivos?.length
+        ? (()=>{const tot=api.ga4.dispositivos.reduce((s,d)=>s+d.sessoes,0);
+            return api.ga4.dispositivos.map(d=>({
+              name:d.tipo==='desktop'?'Desktop':d.tipo==='mobile'?'Mobile':'Tablet',
+              value:Math.round(d.sessoes/tot*100),color:colDev[d.tipo]||'#94a3b8'}));})()
+        : (ga4Ok?[]:DEVICES);
+
+      // Canais — agrupados em 6 categorias
+      const chData = ga4Ok&&api.ga4.canais?.length
+        ? (()=>{
+            const grupos={pago:0,organico:0,direto:0,referral:0,email:0,unassigned:0};
+            api.ga4.canais.forEach(c=>{
+              const k=c.canal||'';
+              if(/paid social|paid search/i.test(k))         grupos.pago       +=c.sessoes;
+              else if(/organic/i.test(k))                    grupos.organico   +=c.sessoes;
+              else if(/direct/i.test(k))                     grupos.direto     +=c.sessoes;
+              else if(/referral/i.test(k))                   grupos.referral   +=c.sessoes;
+              else if(/email/i.test(k))                      grupos.email      +=c.sessoes;
+              else                                           grupos.unassigned +=c.sessoes;
+            });
+            const tot=Object.values(grupos).reduce((s,v)=>s+v,0)||1;
+            const defs=[
+              {key:'pago',      name:'Pago',           color:'#ec4899'},
+              {key:'organico',  name:'Orgânico',        color:'#10b981'},
+              {key:'direto',    name:'Direto',          color:'#6366f1'},
+              {key:'referral',  name:'Referral',        color:'#8b5cf6'},
+              {key:'email',     name:'E-mail',          color:'#f97316'},
+              {key:'unassigned',name:'Não atribuído',   color:'#94a3b8'},
+            ];
+            return defs.filter(d=>grupos[d.key]>0).map(d=>({
+              name:d.name, value:Math.round(grupos[d.key]/tot*100), color:d.color, sessoes:grupos[d.key]
+            })).sort((a,b)=>b.value-a.value);
+          })()
+        : (ga4Ok?[]:CANAIS_AQUISICAO);
+
+      // Páginas
+      const topPags = gscOk&&api.gsc.paginas?.length
+        ? [...api.gsc.paginas].sort((a,b)=>b.cliques-a.cliques).slice(0,6)
+            .map(p=>({url:p.url,ses:p.cliques,bounce:'—',tempo:'—',var:0}))
+        : (gscOk?[]:TOP_PAGINAS);
+      const botPags = gscOk&&api.gsc.paginas?.length
+        ? [...api.gsc.paginas].sort((a,b)=>a.cliques-b.cliques).slice(0,5)
+            .map(p=>({url:p.url,ses:p.cliques,bounce:'—',opp:'Otimizar CTR e meta description'}))
+        : (gscOk?[]:BOTTOM_PAGINAS);
+      const opps = gscOk&&api.gsc.paginas?.length
+        ? api.gsc.paginas.filter(p=>p.impressoes>300&&p.ctr<3)
+            .sort((a,b)=>b.impressoes-a.impressoes).slice(0,5)
+            .map(p=>({url:p.url,impr:p.impressoes,ctr:p.ctr,pos:p.posicao,
+              potencial:p.impressoes>1500?'alto':'médio',acao:'Melhorar title tag e meta description'}))
+        : (gscOk?[]:OPORTUNIDADES);
+
+      const origensAtivas = ga4Ok&&api.ga4.origens?.length ? api.ga4.origens : null;
+      const totalOrigens = origensAtivas ? origensAtivas.reduce((s,o)=>s+o.sessoes,0) : 0;
+
+      return (
+      <div style={{display:'flex',flexDirection:'column',gap:16}}>
+
+        {/* Fonte */}
+        {(gscOk||ga4Ok) && (
+          <div style={{background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:10,padding:'9px 14px',display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+            <span style={{fontSize:14}}>✅</span>
+            <p style={{fontSize:12,fontWeight:600,color:'#166534',margin:0}}>
+              Dados reais · {[gscOk&&'GSC',ga4Ok&&'GA4'].filter(Boolean).join(' + ')} · Últimos {diasApi} dias · Atualizado: {api?.atualizado?.slice(0,10)||'—'}
+            </p>
+          </div>
+        )}
+
+        {/* GSC */}
+        <div>
+          <p style={{fontSize:10,fontWeight:700,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:10}}>Google Search Console</p>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(155px,1fr))',gap:12}}>
+            <MetricCard title="Impressões"    value={imprStr} sub={`Últimos ${diasApi} dias`} cor="indigo" icon={<IEye/>}
+              info={`Total de vezes que o site apareceu nos resultados de busca do Google nos últimos ${diasApi} dias. Fonte: Google Search Console.`}/>
+            <MetricCard title="Cliques"       value={cliStr}  sub={`Tráfego orgânico · ${diasApi}d`} cor="green"  icon={<IClick/>}
+              info={`Total de cliques orgânicos recebidos pelo site nos últimos ${diasApi} dias. Fonte: Google Search Console.`}/>
+            <MetricCard title="CTR Médio"     value={ctrStr}  sub="Taxa de cliques"   cor="amber"  icon={<IChart/>}
+              info="Taxa de cliques: percentual de impressões que resultaram em um clique. Calculado sobre o total real do site. Fonte: Google Search Console."/>
+            <MetricCard title="Posição Média" value={posStr}  sub="Ranking no Google" cor="purple" icon={<IOrg/>}
+              info="Posição média do site nos resultados de busca do Google, ponderada por impressões. Quanto menor o número, melhor o ranking. Fonte: Google Search Console."/>
+          </div>
+        </div>
+
+        {/* GA4 */}
+        <div>
+          <p style={{fontSize:10,fontWeight:700,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:10}}>Google Analytics 4</p>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(155px,1fr))',gap:12}}>
+            <MetricCard title="Sessões Orgânicas" value={sesStr}  sub={`Últimos ${diasApi} dias`} cor="cyan"   icon={<IOrg/>}
+              info={`Soma de sessões vindas de canais orgânicos (Organic Search + Organic Social + Organic Video) nos últimos ${diasApi} dias. Fonte: Google Analytics 4.`}/>
+            <MetricCard title="Bounce Rate"       value={bounceS} sub="Taxa de rejeição"    cor="amber"  icon={<IClick/>}
+              info="Percentual de sessões sem nenhuma interação (clique, scroll, evento). Calculado sobre o total real do site. Meta: abaixo de 55%. Fonte: Google Analytics 4."/>
+            <MetricCard title="Novos Usuários"    value={novosS}  sub="Do total de sessões" cor="indigo" icon={<IUsers/>}
+              info={`Proporção de sessões de usuários que visitaram o site pela primeira vez nos últimos ${diasApi} dias em relação ao total de sessões. Fonte: Google Analytics 4.`}/>
+            <MetricCard title="Total Sessões"     value={totalSes?fmt(totalSes):'—'} sub="Todos os canais" cor="green" icon={<IChart/>}
+              info={`Total real de sessões em todos os canais nos últimos ${diasApi} dias, conforme relatório agregado do GA4 (sem dimensão). Fonte: Google Analytics 4.`}/>
+          </div>
+        </div>
+
+        {/* Dispositivos + Canais */}
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))',gap:12}}>
+          <Bloco titulo="Dispositivos" sub="Distribuição das sessões por dispositivo">
+            <DonutChart data={devData} h={200}/>
+          </Bloco>
+          <Bloco titulo="Canais de Aquisição" sub="De onde vêm os visitantes — GA4">
+            <DonutChart data={chData} h={200}/>
+          </Bloco>
+        </div>
+
+        {/* Origem de Acessos */}
+        {(origensAtivas||ga4Ok) && (()=>{
+          const oriList=origensAtivas||[];
+          const totalPagsOrig=Math.ceil(oriList.length/KW_PER_PAGE);
+          const btnStyleO=(disabled)=>({padding:'5px 14px',borderRadius:7,border:'1px solid #e2e8f0',background:disabled?'#f8fafc':'#fff',color:disabled?'#cbd5e1':'#374151',fontWeight:600,fontSize:12,cursor:disabled?'default':'pointer'});
+          const winO=[];const deltaO=3;
+          for(let i=0;i<totalPagsOrig;i++){if(i===0||i===totalPagsOrig-1||Math.abs(i-origPage)<=deltaO)winO.push(i);}
+          const pagesO=[];let prevO=-1;
+          winO.forEach(i=>{if(prevO>=0&&i-prevO>1)pagesO.push('...');pagesO.push(i);prevO=i;});
+          return(
+            <Bloco titulo="Origem de Acessos" sub={`Grupo de canais · Origem / Mídia · Últimos ${diasApi} dias — GA4 · ${oriList.length} origens`} csvDados={oriList} csvNome="origens-acessos.csv">
+              <div style={{marginBottom:14}}>
+                <BarChart2
+                  labels={oriList.slice(0,10).map(o=>o.fonte||o.origem)}
+                  datasets={[{label:'Sessões',data:oriList.slice(0,10).map(o=>o.sessoes),backgroundColor:'#6366f1'}]}
+                  h={220}/>
+              </div>
+              <Tabela
+                cols={[{label:'#'},{label:'Grupo de Canais'},{label:'Origem / Mídia'},{label:'Sessões',right:true},{label:'Usuários',right:true},{label:'Engajamento',right:true}]}
+                rows={oriList.slice(origPage*KW_PER_PAGE,(origPage+1)*KW_PER_PAGE)}
+                renderRow={(o,i)=>{
+                  const pctTotal=totalOrigens>0?+(o.sessoes/totalOrigens*100).toFixed(1):0;
+                  const canalColor={'Paid Social':'#ec4899','Organic Search':'#10b981','Direct':'#6366f1','Paid Search':'#f59e0b','Organic Social':'#06b6d4','Referral':'#8b5cf6','Email':'#f97316','Unassigned':'#94a3b8'};
+                  const cor=canalColor[o.canal]||'#94a3b8';
+                  const [src,med]=(o.origem||o.canal||'').split(' / ');
+                  return <>
+                    <Td><span style={{fontSize:11,fontWeight:700,color:'#cbd5e1'}}>{origPage*KW_PER_PAGE+i+1}</span></Td>
+                    <Td>
+                      <span style={{fontSize:11,fontWeight:700,color:cor,background:cor+'18',padding:'2px 8px',borderRadius:10,whiteSpace:'nowrap'}}>
+                        {o.canal||src}
+                      </span>
+                    </Td>
+                    <Td>
+                      <div style={{display:'flex',alignItems:'center',gap:6}}>
+                        <span style={{fontWeight:600,color:'#374151',fontSize:12}}>{src}</span>
+                        {med&&<span style={{fontSize:11,background:'#f1f5f9',color:'#64748b',padding:'1px 6px',borderRadius:10}}>{med}</span>}
+                      </div>
+                      <div style={{fontSize:10,color:'#94a3b8',marginTop:1}}>{pctTotal}% do total</div>
+                    </Td>
+                    <Td right bold>{fmt(o.sessoes)}</Td>
+                    <Td right><span style={{color:'#374151'}}>{fmt(o.usuarios??o.novos)}</span></Td>
+                    <Td right>
+                      <span className={(o.engajamento??100-o.bounce)<35?'badge-red':(o.engajamento??100-o.bounce)<55?'badge-amber':'badge-green'}>
+                        {o.engajamento!=null?o.engajamento+'%':o.bounce!=null?(100-o.bounce).toFixed(1)+'%':'—'}
+                      </span>
+                    </Td>
+                  </>;
+                }}
+              />
+              {oriList.length>KW_PER_PAGE&&(
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:12,paddingTop:12,borderTop:'1px solid #f1f5f9'}}>
+                  <button onClick={()=>setOrigPage(p=>Math.max(0,p-1))} disabled={origPage===0} style={btnStyleO(origPage===0)}>← Anterior</button>
+                  <div style={{display:'flex',gap:4,alignItems:'center',flexWrap:'wrap'}}>
+                    {pagesO.map((p,idx)=>p==='...'
+                      ?<span key={'e'+idx} style={{color:'#94a3b8',fontSize:12,padding:'0 2px'}}>…</span>
+                      :<button key={p} onClick={()=>setOrigPage(p)}
+                          style={{width:28,height:28,borderRadius:6,border:'1px solid',borderColor:origPage===p?'#6366f1':'#e2e8f0',background:origPage===p?'#6366f1':'#fff',color:origPage===p?'#fff':'#64748b',fontWeight:600,fontSize:12,cursor:'pointer'}}>
+                          {p+1}
+                        </button>
+                    )}
+                  </div>
+                  <button onClick={()=>setOrigPage(p=>Math.min(totalPagsOrig-1,p+1))} disabled={origPage>=totalPagsOrig-1} style={btnStyleO(origPage>=totalPagsOrig-1)}>Próxima →</button>
+                </div>
+              )}
+            </Bloco>
+          );
+        })()}
+
+        {/* Timeline */}
+        <Bloco titulo="Cliques e Impressões ao Longo do Tempo" sub="Evolução — Search Console" csvDados={timeline} csvNome="seo-timeline.csv">
+          <AreaChart2
+            labels={timeline.map(d=>d.sem)}
+            datasets={[
+              {label:'Impressões',data:timeline.map(d=>d.impressoes),borderColor:'#6366f1',backgroundColor:'rgba(99,102,241,.08)',yAxisID:'y1'},
+              {label:'Cliques',   data:timeline.map(d=>d.cliques),   borderColor:'#10b981',backgroundColor:'rgba(16,185,129,.1)', yAxisID:'y2'},
+            ]} h={250}/>
+        </Bloco>
+
+        {/* Top Keywords */}
+        <Bloco titulo="Top Palavras-chave" sub={gscOk?`Dados reais — GSC · ${kwRows.length} palavras`:'Por posição média — dados de exemplo'} csvDados={kwRows} csvNome="keywords.csv">
+          <Tabela
+            cols={[{label:'#'},{label:'Palavra-chave'},{label:'Posição',right:true},{label:'Cliques',right:true},{label:'Impressões',right:true}]}
+            rows={kwRows.slice(kwPage*KW_PER_PAGE,(kwPage+1)*KW_PER_PAGE)}
+            renderRow={(kw,i)=><>
+              <Td><span style={{fontSize:11,fontWeight:700,color:'#cbd5e1'}}>{kwPage*KW_PER_PAGE+i+1}</span></Td>
+              <Td>{kw.kw}</Td>
+              <Td right><span className={kw.pos<=2?'badge-green':kw.pos<=4?'badge-amber':'badge-gray'}>{kw.pos.toFixed(1)}°</span></Td>
+              <Td right bold>{fmt(kw.cli)}</Td>
+              <Td right><span style={{color:'#64748b'}}>{fmt(kw.vol||0)}</span></Td>
+            </>}
+          />
+          {kwRows.length>KW_PER_PAGE&&(()=>{
+            const totalPags=Math.ceil(kwRows.length/KW_PER_PAGE);
+            const btnStyle=(disabled)=>({padding:'5px 14px',borderRadius:7,border:'1px solid #e2e8f0',background:disabled?'#f8fafc':'#fff',color:disabled?'#cbd5e1':'#374151',fontWeight:600,fontSize:12,cursor:disabled?'default':'pointer'});
+            // janela de páginas: até 7 botões ao redor da atual
+            const win=[];
+            const delta=3;
+            for(let i=0;i<totalPags;i++){
+              if(i===0||i===totalPags-1||Math.abs(i-kwPage)<=delta) win.push(i);
+            }
+            const pages=[];
+            let prev=-1;
+            win.forEach(i=>{
+              if(prev>=0&&i-prev>1) pages.push('...');
+              pages.push(i);
+              prev=i;
+            });
+            return(
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:12,paddingTop:12,borderTop:'1px solid #f1f5f9'}}>
+                <button onClick={()=>setKwPage(p=>Math.max(0,p-1))} disabled={kwPage===0} style={btnStyle(kwPage===0)}>← Anterior</button>
+                <div style={{display:'flex',gap:4,alignItems:'center',flexWrap:'wrap'}}>
+                  {pages.map((p,idx)=>p==='...'
+                    ? <span key={'e'+idx} style={{color:'#94a3b8',fontSize:12,padding:'0 2px'}}>…</span>
+                    : <button key={p} onClick={()=>setKwPage(p)}
+                        style={{width:28,height:28,borderRadius:6,border:'1px solid',borderColor:kwPage===p?'#6366f1':'#e2e8f0',background:kwPage===p?'#6366f1':'#fff',color:kwPage===p?'#fff':'#64748b',fontWeight:600,fontSize:12,cursor:'pointer'}}>
+                        {p+1}
+                      </button>
+                  )}
+                </div>
+                <button onClick={()=>setKwPage(p=>Math.min(totalPags-1,p+1))} disabled={kwPage>=totalPags-1} style={btnStyle(kwPage>=totalPags-1)}>Próxima →</button>
+              </div>
+            );
+          })()}
+        </Bloco>
+
+        {/* Palavras-chave de marca */}
+        <Bloco titulo="Palavras-chave da Marca Helena CRM" sub={gscOk?`Buscas diretas pela marca — GSC · ${brandKwRows.length} palavras`:'Dados de exemplo'} csvDados={brandKwRows} csvNome="keywords-marca.csv">
+          <div style={{marginBottom:12,background:'#eef2ff',border:'1px solid #c7d2fe',borderRadius:8,padding:'9px 12px',fontSize:12,color:'#4338ca'}}>
+            💡 Buscas pela marca indicam reconhecimento e reputação. Crescimento aqui = autoridade construída.
+          </div>
+          <Tabela
+            cols={[{label:'Palavra-chave'},{label:'Posição',right:true},{label:'Impressões',right:true},{label:'Cliques',right:true},{label:'CTR',right:true}]}
+            rows={brandKwRows.slice(brandPage*KW_PER_PAGE,(brandPage+1)*KW_PER_PAGE)}
+            renderRow={(kw,i)=><>
+              <Td><span style={{fontWeight:500,color:'#374151'}}>{kw.kw}</span></Td>
+              <Td right><span className="badge-green">{kw.pos.toFixed(1)}°</span></Td>
+              <Td right><span style={{color:'#64748b'}}>{fmt(kw.vol)}</span></Td>
+              <Td right bold>{fmt(kw.cli)}</Td>
+              <Td right><span style={{color:'#64748b'}}>{gscOk?kw.ctr+'%':'+'+kw.var+'%'}</span></Td>
+            </>}
+          />
+          {brandKwRows.length>KW_PER_PAGE&&(()=>{
+            const totalPags=Math.ceil(brandKwRows.length/KW_PER_PAGE);
+            const btnStyle=(disabled)=>({padding:'5px 14px',borderRadius:7,border:'1px solid #e2e8f0',background:disabled?'#f8fafc':'#fff',color:disabled?'#cbd5e1':'#374151',fontWeight:600,fontSize:12,cursor:disabled?'default':'pointer'});
+            const win=[];const delta=3;
+            for(let i=0;i<totalPags;i++){if(i===0||i===totalPags-1||Math.abs(i-brandPage)<=delta)win.push(i);}
+            const pages=[];let prev=-1;
+            win.forEach(i=>{if(prev>=0&&i-prev>1)pages.push('...');pages.push(i);prev=i;});
+            return(
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:12,paddingTop:12,borderTop:'1px solid #f1f5f9'}}>
+                <button onClick={()=>setBrandPage(p=>Math.max(0,p-1))} disabled={brandPage===0} style={btnStyle(brandPage===0)}>← Anterior</button>
+                <div style={{display:'flex',gap:4,alignItems:'center',flexWrap:'wrap'}}>
+                  {pages.map((p,idx)=>p==='...'
+                    ?<span key={'e'+idx} style={{color:'#94a3b8',fontSize:12,padding:'0 2px'}}>…</span>
+                    :<button key={p} onClick={()=>setBrandPage(p)}
+                        style={{width:28,height:28,borderRadius:6,border:'1px solid',borderColor:brandPage===p?'#6366f1':'#e2e8f0',background:brandPage===p?'#6366f1':'#fff',color:brandPage===p?'#fff':'#64748b',fontWeight:600,fontSize:12,cursor:'pointer'}}>
+                        {p+1}
+                      </button>
+                  )}
+                </div>
+                <button onClick={()=>setBrandPage(p=>Math.min(totalPags-1,p+1))} disabled={brandPage>=totalPags-1} style={btnStyle(brandPage>=totalPags-1)}>Próxima →</button>
+              </div>
+            );
+          })()}
+        </Bloco>
+
+        {/* Páginas mais acessadas */}
+        <Bloco titulo="Páginas Mais Acessadas" sub={gscOk?'Por cliques orgânicos — GSC':'Top tráfego orgânico — dados de exemplo'} csvDados={topPags} csvNome="top-paginas.csv">
+          <Tabela
+            cols={[{label:'Página'},{label:gscOk?'Cliques':'Sessões',right:true},{label:'Bounce',right:true},{label:'Tempo',right:true},{label:'Variação',right:true}]}
+            rows={topPags}
+            renderRow={(p,i)=><>
+              <Td><span style={{fontFamily:'monospace',fontSize:12,color:'#6366f1',background:'#eef2ff',padding:'2px 7px',borderRadius:5}}>{p.url}</span></Td>
+              <Td right bold>{fmt(p.ses)}</Td>
+              <Td right><span style={{color:'#64748b'}}>{p.bounce}</span></Td>
+              <Td right><span style={{color:'#64748b'}}>{p.tempo}</span></Td>
+              <Td right><span className={p.var>=0?'badge-up':'badge-dn'}>{p.var>=0?'+':''}{p.var}%</span></Td>
+            </>}
+          />
+        </Bloco>
+
+        {/* Páginas menos acessadas */}
+        <Bloco titulo="Páginas com Baixo Tráfego" sub={gscOk?'Menor volume de cliques orgânicos — GSC':'Dados de exemplo'} csvDados={botPags} csvNome="paginas-baixo-trafego.csv">
+          <Tabela
+            cols={[{label:'Página'},{label:gscOk?'Cliques':'Sessões',right:true},{label:'Bounce',right:true},{label:'Oportunidade'}]}
+            rows={botPags}
+            renderRow={(p,i)=><>
+              <Td><span style={{fontFamily:'monospace',fontSize:12,color:'#ef4444',background:'#fef2f2',padding:'2px 7px',borderRadius:5}}>{p.url}</span></Td>
+              <Td right><span style={{color:'#64748b'}}>{p.ses}</span></Td>
+              <Td right><span className="badge-red">{p.bounce}</span></Td>
+              <td style={{padding:'9px 12px',fontSize:12,color:'#64748b'}}>{p.opp}</td>
+            </>}
+          />
+        </Bloco>
+
+        {/* Oportunidades de crescimento */}
+        <Bloco titulo="🚀 Oportunidades de Crescimento" sub="Páginas com muitas impressões mas baixo CTR — alto potencial de melhoria" csvDados={opps} csvNome="oportunidades-seo.csv">
+          <div style={{marginBottom:12,background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:8,padding:'9px 12px',fontSize:12,color:'#166534'}}>
+            💡 Estas páginas já aparecem bem no Google, mas poucas pessoas clicam. Melhorar title e meta description pode multiplicar o tráfego sem esforço de link building.
+          </div>
+          {opps.map((o,i)=>(
+            <div key={i} className="opp-row">
+              <div style={{flex:'0 0 32px',height:32,borderRadius:8,background:o.potencial==='alto'?'#fef2f2':'#fffbeb',
+                display:'flex',alignItems:'center',justifyContent:'center',fontSize:16}}>
+                {o.potencial==='alto'?'🔥':'⚡'}
+              </div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                  <span style={{fontFamily:'monospace',fontSize:12,color:'#6366f1',background:'#eef2ff',padding:'2px 7px',borderRadius:5}}>{o.url}</span>
+                  <span className={o.potencial==='alto'?'badge-red':'badge-amber'}>{o.potencial} potencial</span>
+                </div>
+                <div style={{display:'flex',gap:16,marginTop:4,flexWrap:'wrap'}}>
+                  <span style={{fontSize:11,color:'#94a3b8'}}>Impressões: <strong style={{color:'#374151'}}>{fmt(o.impr)}</strong></span>
+                  <span style={{fontSize:11,color:'#94a3b8'}}>CTR: <strong style={{color:o.ctr<2?'#ef4444':'#f59e0b'}}>{o.ctr}%</strong></span>
+                  <span style={{fontSize:11,color:'#94a3b8'}}>Posição: <strong style={{color:'#374151'}}>{o.pos}°</strong></span>
+                </div>
+                <p style={{fontSize:11,color:'#64748b',margin:'4px 0 0'}}>→ {o.acao}</p>
+              </div>
+            </div>
+          ))}
+        </Bloco>
+
+        {/* ── SEMrush (quando conectado) ── */}
+        {(()=>{
+          const sm=api?.semrush;
+          const smOk=!!sm&&sm.dominio?.keywords>0;
+          if(!smOk) return (
+            <div style={{background:'rgba(245,158,11,.08)',border:'1px solid rgba(245,158,11,.3)',borderRadius:10,padding:'10px 16px',display:'flex',gap:10,alignItems:'center'}}>
+              <span style={{fontSize:14}}>🔌</span>
+              <p style={{fontSize:12,fontWeight:600,color:'#92400e',margin:0}}>SEMrush não conectado — configure a <code>SEMRUSH_KEY</code> nas Propriedades do Script para ver zonas de keywords e concorrentes</p>
+            </div>
+          );
+          const kwsRaw=sm.keywords||[];
+          const kwMap={};
+          kwsRaw.forEach(k=>{if(!kwMap[k.kw]||k.posicao<kwMap[k.kw].posicao)kwMap[k.kw]=k;});
+          const kws=Object.values(kwMap);
+          const defender=kws.filter(k=>k.posicao<=3);
+          const atacar=kws.filter(k=>k.posicao>=4&&k.posicao<=20);
+          const capturar=kws.filter(k=>k.posicao>20);
+          const zonaColor={'Defender':'#10b981','Atacar':'#f59e0b','Capturar':'#6366f1'};
+          const zonaBg={'Defender':'rgba(16,185,129,.12)','Atacar':'rgba(245,158,11,.12)','Capturar':'rgba(99,102,241,.12)'};
+          const helena={domain:'helenacrm.com',tipo:'helena',keywords:sm.dominio.keywords,traffic:sm.dominio.traffic};
+          const concs=[helena,...(sm.concorrentes||[])].sort((a,b)=>b.traffic-a.traffic);
+          const maxTraf=concs.reduce((m,c)=>Math.max(m,c.traffic),1);
+          const domCol=d=>{if(d==='helenacrm.com')return'#6366f1';const dir=['bolten.io','blackconversa.com.br','growtalks.com.br','kommo.com','botconversa.com.br'];return dir.includes(d)?'#ef4444':'#f59e0b';};
+          return (<>
+            {/* SEMrush header */}
+            <div style={{display:'flex',alignItems:'center',gap:10,margin:'4px 0 -4px'}}>
+              <p style={{fontSize:10,fontWeight:700,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'.06em',margin:0}}>SEMrush</p>
+              <div style={{flex:1,height:1,background:'#e2e8f0'}}/>
+              <span style={{fontSize:11,color:'#94a3b8'}}>{kws.length} keywords · cache 12h</span>
+            </div>
+            {/* Metric cards */}
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:12}}>
+              {[
+                {l:'Keywords Orgânicas',v:(sm.dominio.keywords).toLocaleString('pt-BR'),s:'Total SEMrush',c:'#6366f1'},
+                {l:'Tráfego Estimado',v:(sm.dominio.traffic).toLocaleString('pt-BR'),s:'Visitas/mês',c:'#10b981'},
+                {l:'🛡 Defender',v:defender.length,s:'Pos 1–3 · manter',c:'#10b981'},
+                {l:'⚔️ Atacar',v:atacar.length,s:'Pos 4–20 · subir',c:'#f59e0b'},
+              ].map((k,i)=>(
+                <div key={i} style={{background:'#fff',borderRadius:12,padding:16,boxShadow:'0 1px 4px rgba(0,0,0,.06)',borderTop:`3px solid ${k.c}`}}>
+                  <p style={{fontSize:11,fontWeight:600,color:'#64748b',textTransform:'uppercase',letterSpacing:.5,margin:'0 0 4px'}}>{k.l}</p>
+                  <p style={{fontSize:24,fontWeight:800,color:'#1e293b',margin:'0 0 2px'}}>{k.v}</p>
+                  <p style={{fontSize:11,color:'#94a3b8',margin:0}}>{k.s}</p>
+                </div>
+              ))}
+            </div>
+            {/* Radar + Zonas */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+              <div style={{background:'#fff',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
+                <p style={{fontSize:13,fontWeight:700,color:'#1e293b',margin:'0 0 4px'}}>Radar de Concorrentes</p>
+                <p style={{fontSize:11,color:'#94a3b8',margin:'0 0 16px'}}>Tráfego orgânico estimado · SEMrush</p>
+                {concs.map((c,i)=>{
+                  const pct=Math.round((c.traffic/maxTraf)*100);
+                  const isH=c.domain==='helenacrm.com';
+                  return(
+                    <div key={i} style={{marginBottom:10}}>
+                      <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
+                        <span style={{fontSize:12,fontWeight:isH?700:500,color:isH?'#6366f1':'#334155'}}>{isH?'⭐ ':''}{c.domain}{c.tipo&&c.tipo!=='helena'&&<span style={{fontSize:10,marginLeft:6,color:'#94a3b8'}}>{c.tipo==='direto'?'direto':'conteúdo'}</span>}</span>
+                        <span style={{fontSize:12,fontWeight:600,color:'#475569'}}>{c.traffic.toLocaleString('pt-BR')}</span>
+                      </div>
+                      <div style={{height:8,background:'#f1f5f9',borderRadius:4,overflow:'hidden'}}>
+                        <div style={{height:'100%',width:pct+'%',background:domCol(c.domain),borderRadius:4}}/>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{background:'#fff',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
+                <p style={{fontSize:13,fontWeight:700,color:'#1e293b',margin:'0 0 4px'}}>Zonas de Palavras-Chave</p>
+                <p style={{fontSize:11,color:'#94a3b8',margin:'0 0 16px'}}>Estratégia por posição</p>
+                {[
+                  {zona:'Defender',kws:defender,desc:'Você já está no topo. Manter conteúdo atualizado.',color:'#10b981',bg:'rgba(16,185,129,.08)',ic:'🛡️'},
+                  {zona:'Atacar',  kws:atacar,  desc:'Página 1 mas não top 3. Otimizar on-page.',color:'#f59e0b',bg:'rgba(245,158,11,.08)',ic:'⚔️'},
+                  {zona:'Capturar',kws:capturar,desc:'Fora das 3 primeiras páginas. Criar conteúdo.',color:'#6366f1',bg:'rgba(99,102,241,.08)',ic:'🎯'},
+                ].map(({zona,kws:z,desc,color,bg,ic})=>(
+                  <div key={zona} style={{background:bg,borderRadius:8,padding:12,marginBottom:8}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+                      <span style={{fontSize:13,fontWeight:700,color}}>{ic} {zona}</span>
+                      <span style={{fontSize:18,fontWeight:800,color}}>{z.length}</span>
+                    </div>
+                    <p style={{fontSize:11,color:'#64748b',margin:0}}>{desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {/* Análise por Página */}
+            {(sm.paginas||[]).length>0&&(
+            <div style={{background:'#fff',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
+              <p style={{fontSize:13,fontWeight:700,color:'#1e293b',margin:'0 0 4px'}}>Análise por Página</p>
+              <p style={{fontSize:11,color:'#94a3b8',margin:'0 0 16px'}}>Oportunidades e ações por URL · SEMrush</p>
+              <div style={{overflowX:'auto'}}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                  <thead><tr style={{background:'#f8fafc'}}>{['Página','Keywords','Melhor Pos','🛡 Defender','⚔️ Atacar','🎯 Capturar','Ação'].map(h=><th key={h} style={{padding:'8px 12px',textAlign:'left',fontWeight:600,color:'#64748b',borderBottom:'1px solid #e2e8f0',whiteSpace:'nowrap'}}>{h}</th>)}</tr></thead>
+                  <tbody>{(sm.paginas||[]).map((p,i)=>{
+                    const slug=p.url.replace(/^https?:\/\/[^/]+/,'').replace(/\/$/,'')||'/';
+                    const topKw=[...(p.defender||[]),...(p.atacar||[]),...(p.capturar||[])].sort((a,b)=>a.pos-b.pos)[0];
+                    let acao,aColor,aBg;
+                    if(p.defender?.length&&p.atacar?.length){acao='Defender + Otimizar';aColor='#059669';aBg='rgba(16,185,129,.1)';}
+                    else if(p.atacar?.length){acao='Otimizar on-page';aColor='#b45309';aBg='rgba(245,158,11,.1)';}
+                    else if(p.defender?.length){acao='Manter posição';aColor='#10b981';aBg='rgba(16,185,129,.08)';}
+                    else{acao='Criar conteúdo';aColor='#6366f1';aBg='rgba(99,102,241,.08)';}
+                    return(<tr key={i} style={{borderBottom:'1px solid #f1f5f9',background:i%2===0?'#fff':'#fafafa'}}>
+                      <td style={{padding:'8px 12px',maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}><span style={{fontSize:12,fontWeight:600,color:'#1e293b'}}>{slug}</span>{topKw&&<div style={{fontSize:10,color:'#94a3b8',marginTop:2}}>top: "{topKw.kw}" #{topKw.pos}</div>}</td>
+                      <td style={{padding:'8px 12px',textAlign:'center',color:'#475569'}}>{p.totalKws}</td>
+                      <td style={{padding:'8px 12px',textAlign:'center',fontWeight:700,color:p.melhorPos<=3?'#10b981':p.melhorPos<=20?'#f59e0b':'#6366f1'}}>#{p.melhorPos}</td>
+                      <td style={{padding:'8px 12px',textAlign:'center',fontWeight:700,color:'#10b981'}}>{p.defender?.length||0}</td>
+                      <td style={{padding:'8px 12px',textAlign:'center',fontWeight:700,color:'#f59e0b'}}>{p.atacar?.length||0}</td>
+                      <td style={{padding:'8px 12px',textAlign:'center',fontWeight:700,color:'#6366f1'}}>{p.capturar?.length||0}</td>
+                      <td style={{padding:'8px 12px'}}><span style={{background:aBg,color:aColor,fontWeight:700,fontSize:11,padding:'3px 8px',borderRadius:20,whiteSpace:'nowrap'}}>{acao}</span></td>
+                    </tr>);
+                  })}</tbody>
+                </table>
+              </div>
+            </div>
+            )}
+            {/* Mapa de Keywords */}
+            <div style={{background:'#fff',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
+              <p style={{fontSize:13,fontWeight:700,color:'#1e293b',margin:'0 0 4px'}}>Mapa de Palavras-Chave</p>
+              <p style={{fontSize:11,color:'#94a3b8',margin:'0 0 16px'}}>Top {kws.length} keywords orgânicas · ordenadas por volume</p>
+              <div style={{overflowX:'auto'}}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                  <thead><tr style={{background:'#f8fafc'}}>{['Keyword','Zona','Posição','Volume/mês','CPC (R$)','Página'].map(h=><th key={h} style={{padding:'8px 12px',textAlign:'left',fontWeight:600,color:'#64748b',borderBottom:'1px solid #e2e8f0',whiteSpace:'nowrap'}}>{h}</th>)}</tr></thead>
+                  <tbody>{kws.sort((a,b)=>b.volume-a.volume).map((k,i)=>{
+                    const zona=k.posicao<=3?'Defender':k.posicao<=20?'Atacar':'Capturar';
+                    const page=k.url?k.url.replace(/^https?:\/\/[^/]+/,'').replace(/\/$/,'')||'/':'—';
+                    return(<tr key={i} style={{borderBottom:'1px solid #f1f5f9',background:i%2===0?'#fff':'#fafafa'}}>
+                      <td style={{padding:'8px 12px',fontWeight:600,color:'#1e293b'}}>{k.kw}</td>
+                      <td style={{padding:'8px 12px'}}><span style={{background:zonaBg[zona],color:zonaColor[zona],fontWeight:700,fontSize:11,padding:'2px 8px',borderRadius:20}}>{zona}</span></td>
+                      <td style={{padding:'8px 12px',textAlign:'center',fontWeight:700,color:k.posicao<=3?'#10b981':k.posicao<=20?'#f59e0b':'#6366f1'}}>#{k.posicao}</td>
+                      <td style={{padding:'8px 12px',textAlign:'right',color:'#475569'}}>{k.volume>0?k.volume.toLocaleString('pt-BR'):'—'}</td>
+                      <td style={{padding:'8px 12px',textAlign:'right',color:'#475569'}}>{k.cpc>0?`R$ ${k.cpc.toFixed(2)}`:'—'}</td>
+                      <td style={{padding:'8px 12px',color:'#94a3b8',fontSize:11,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{page}</td>
+                    </tr>);
+                  })}</tbody>
+                </table>
+              </div>
+            </div>
+          </>);
+        })()}
+      </div>
+      );
+    };
+
+    /* ══════════════════════════════════════════════
+       ABA 3 — E-MAIL MARKETING
+    ══════════════════════════════════════════════ */
+
+    const AbaEmail=()=>{
+      const avgAb  =(CAMPANHAS.reduce((s,c)=>s+c.ab, 0)/CAMPANHAS.length).toFixed(1);
+      const avgCli =(CAMPANHAS.reduce((s,c)=>s+c.cli,0)/CAMPANHAS.length).toFixed(1);
+      const avgDesc=(CAMPANHAS.reduce((s,c)=>s+c.desc,0)/CAMPANHAS.length).toFixed(2);
+      const totEnv = CAMPANHAS.reduce((s,c)=>s+c.env,0);
+      return (
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(175px,1fr))',gap:12}}>
+            <MetricCard title="Taxa de Abertura Média" value={avgAb+'%'}   sub="Todas as campanhas" trend={3.2}   cor="indigo" icon={<IMail/>}/>
+            <MetricCard title="Taxa de Cliques Média"  value={avgCli+'%'}  sub="Todas as campanhas" trend={7.8}   cor="green"  icon={<IClick/>}/>
+            <MetricCard title="Descadastros Médios"    value={avgDesc+'%'} sub="Média por campanha"  trend={-12.4} cor="amber"  icon={<IUsers/>}/>
+            <MetricCard title="Total Enviados"          value={fmt(totEnv)} sub="Todas as campanhas" trend={15.6}  cor="purple" icon={<IChart/>}/>
+          </div>
+
+          <Bloco titulo="Ranking de Campanhas — Taxa de Abertura" sub="Da melhor para a pior performance" csvDados={CAMPANHAS} csvNome="campanhas-email.csv">
+            {CAMPANHAS.map((c,i)=>(
+              <div key={i} style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
+                <span style={{fontSize:11,fontWeight:700,color:'#cbd5e1',width:16,textAlign:'right'}}>{i+1}</span>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}}>
+                    <span style={{fontSize:13,fontWeight:500,color:'#374151',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.nome}</span>
+                    <div style={{display:'flex',gap:14,alignItems:'center',marginLeft:8,flexShrink:0}}>
+                      <span style={{fontSize:11,color:'#94a3b8'}}>Cliques: <strong style={{color:'#64748b'}}>{c.cli}%</strong></span>
+                      <span style={{fontSize:14,fontWeight:700,color:c.ab>=50?'#059669':c.ab>=35?'#d97706':'#ef4444'}}>{c.ab}%</span>
+                    </div>
+                  </div>
+                  <div style={{height:6,background:'#f1f5f9',borderRadius:4,overflow:'hidden'}}>
+                    <div style={{height:'100%',width:`${c.ab}%`,background:c.ab>=50?'#10b981':c.ab>=35?'#f59e0b':'#ef4444',borderRadius:4,transition:'width .5s'}}/>
+                  </div>
+                </div>
+              </div>
+            ))}
+            <p style={{fontSize:11,color:'#94a3b8',margin:'8px 0 0'}}>Verde ≥ 50% · Amarelo ≥ 35% · Vermelho abaixo de 35%</p>
+          </Bloco>
+
+          <Bloco titulo="Mapa de Engajamento por Etapa da Jornada" sub="Abertura, cliques e conversão por fase do funil" csvDados={JORNADA} csvNome="jornada-email.csv">
+            <BarChart2 labels={JORNADA.map(d=>d.etapa)} datasets={[
+              {label:'Abertura', data:JORNADA.map(d=>d.ab), backgroundColor:'#6366f1'},
+              {label:'Cliques',  data:JORNADA.map(d=>d.cli),backgroundColor:'#10b981'},
+              {label:'Conversão',data:JORNADA.map(d=>d.conv),backgroundColor:'#f59e0b'},
+            ]} h={240} unit="%"/>
+          </Bloco>
+
+          <div className="card" style={{padding:20}}>
+            <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
+              <div style={{background:'#6366f1',borderRadius:10,padding:8,display:'flex'}}>
+                <svg style={{width:18,height:18}} fill="none" stroke="#fff" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                </svg>
+              </div>
+              <div>
+                <h4 style={{fontSize:13,fontWeight:700,color:'#1e293b',margin:0}}>Sugestões de IA</h4>
+                <p style={{fontSize:11,color:'#94a3b8',margin:'2px 0 0'}}>Insights gerados com base nos seus dados de e-mail</p>
+              </div>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))',gap:10}}>
+              {AI_DICAS.map((s,i)=>(
+                <div key={i} style={{background:'#eef2ff',border:'1px solid #c7d2fe',borderRadius:10,padding:14}}>
+                  <div style={{display:'flex',gap:10,alignItems:'flex-start'}}>
+                    <span style={{fontSize:20}}>{s.ic}</span>
+                    <div>
+                      <p style={{fontSize:13,fontWeight:700,color:'#3730a3',margin:0}}>{s.t}</p>
+                      <p style={{fontSize:12,color:'#4338ca',margin:'4px 0 0',lineHeight:1.5}}>{s.d}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    /* ══════════════════════════════════════════════
+       ABA 4 — FUNIL
+    ══════════════════════════════════════════════ */
+
+    const AbaFunil=({api,de,ate})=>{
+      const [funilPage,setFunilPage]=useState(0);
+      const FUNIL_PER_PAGE=6;
+      const toMK=d=>d?String(d.getFullYear())+String(d.getMonth()+1).padStart(2,'0'):'';
+      const startKey=toMK(de);
+      const endKey=toMK(ate);
+      const ld       = api?.leads || {};
+      const porMes   = (ld.porMes||[]).filter(m=>(!startKey||m.mesKey>=startKey)&&(!endKey||m.mesKey<=endKey));
+      const recentes = ld.recentes|| [];
+      const hasData  = porMes.length > 0;
+
+      const total     = porMes.reduce((s,m)=>s+(m.total||0),0);
+      const cf        = porMes.reduce((s,m)=>s+(m.cf||0),0);
+      const wl        = porMes.reduce((s,m)=>s+(m.wl||0),0);
+      const totalMql  = porMes.reduce((s,m)=>s+(m.mql||0),0);
+      const totalSql  = porMes.reduce((s,m)=>s+(m.sql||0),0);
+      const totalPago = porMes.reduce((s,m)=>s+(m.pago||0),0);
+      const totalOrg  = porMes.reduce((s,m)=>s+(m.organico||0),0);
+
+      const pct = (a,b) => b>0 ? (a/b*100).toFixed(1)+'%' : '—';
+      const Card=({label,valor,sub,cor})=>(
+        <div className="card" style={{padding:20}}>
+          <p style={{fontSize:10,fontWeight:700,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'.06em',margin:0}}>{label}</p>
+          <p style={{fontSize:28,fontWeight:800,color:cor||'#0f172a',margin:'6px 0 2px'}}>{fmt(valor)}</p>
+          {sub&&<p style={{fontSize:11,color:'#94a3b8',margin:0}}>{sub}</p>}
+        </div>
+      );
+
+      return (
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+
+          {!hasData && (
+            <div style={{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:10,padding:'12px 16px',fontSize:13,color:'#92400e'}}>
+              ⏳ Aguardando dados da planilha…
+            </div>
+          )}
+
+          {/* Cards de resumo */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:12}}>
+            <Card label="Total de Leads" valor={total} sub="Todos os meses"/>
+            <Card label="Cliente Final"  valor={cf}    sub={pct(cf,total)+' do total'} cor="#6366f1"/>
+            <Card label="White Label"    valor={wl}    sub={pct(wl,total)+' do total'} cor="#10b981"/>
+            <Card label="MQL"            valor={totalMql} sub={pct(totalMql,total)+' conv.'} cor="#a855f7"/>
+            <Card label="SQL"            valor={totalSql} sub={pct(totalSql,total)+' conv.'} cor="#f59e0b"/>
+            <Card label="Via Ads (Pago)" valor={totalPago} sub={pct(totalPago,total)+' do total'} cor="#7c3aed"/>
+            <Card label="Orgânico"       valor={totalOrg}  sub={pct(totalOrg,total)+' do total'}  cor="#06b6d4"/>
+          </div>
+
+          {/* Funil visual */}
+          {hasData && (
+            <Bloco titulo="Funil de Conversão" sub="Total histórico · Leads → MQL → SQL">
+              <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4,padding:'16px 0'}}>
+                {[
+                  {nome:'Leads Totais',val:total,  cor:'#6366f1'},
+                  {nome:'MQL',         val:totalMql,cor:'#a855f7'},
+                  {nome:'SQL',         val:totalSql,cor:'#f59e0b'},
+                ].map((e,i,arr)=>(
+                  <div key={i} style={{width:'100%',display:'flex',flexDirection:'column',alignItems:'center'}}>
+                    <div style={{width:`${100-i*22}%`,background:e.cor,borderRadius:7,padding:'14px 0',
+                      display:'flex',justifyContent:'center',alignItems:'center',gap:16,color:'#fff',fontWeight:700,fontSize:14}}>
+                      <span>{e.nome}</span>
+                      <span style={{opacity:.85}}>{fmt(e.val)}</span>
+                    </div>
+                    {i<arr.length-1&&(
+                      <div style={{display:'flex',alignItems:'center',gap:6,margin:'6px 0'}}>
+                        <span style={{color:'#cbd5e1',fontSize:14}}>↓</span>
+                        <span style={{fontSize:11,color:'#64748b'}}>
+                          Conversão: <strong style={{color:'#6366f1'}}>{pct(arr[i+1].val,e.val)}</strong>
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Bloco>
+          )}
+
+          {/* Evolução mensal CF vs WL */}
+          {porMes.length>0&&(
+            <Bloco titulo="Evolução Mensal" sub="Cliente Final vs White Label · todos os meses" csvDados={porMes} csvNome="funil-mensal.csv">
+              <BarChart2
+                labels={porMes.map(m=>m.mes)}
+                datasets={[
+                  {label:'Cliente Final',data:porMes.map(m=>m.cf||0),  backgroundColor:'#6366f1'},
+                  {label:'White Label',  data:porMes.map(m=>m.wl||0),  backgroundColor:'#10b981'},
+                ]}
+                stacked={true} h={280}/>
+            </Bloco>
+          )}
+
+          {/* Pago vs Orgânico por mês */}
+          {porMes.length>0&&(
+            <Bloco titulo="Pago vs Orgânico por Mês" sub="Leads via Ads × Leads orgânicos" csvDados={porMes.map(m=>({mes:m.mes,pago:m.pago||0,organico:m.organico||0}))} csvNome="pago-organico.csv">
+              <BarChart2
+                labels={porMes.map(m=>m.mes)}
+                datasets={[
+                  {label:'Ads (Pago)', data:porMes.map(m=>m.pago||0),    backgroundColor:'#7c3aed'},
+                  {label:'Orgânico',   data:porMes.map(m=>m.organico||0),backgroundColor:'#06b6d4'},
+                ]}
+                stacked={true} h={260}/>
+            </Bloco>
+          )}
+
+          {/* MQL e SQL por mês */}
+          {porMes.length>0&&(
+            <Bloco titulo="MQL e SQL por Mês" sub="Evolução de qualificação ao longo do tempo" csvDados={porMes.map(m=>({mes:m.mes,mql:m.mql||0,sql:m.sql||0}))} csvNome="mql-sql-mensal.csv">
+              <LineChart2
+                labels={porMes.map(m=>m.mes)}
+                datasets={[
+                  {label:'MQL',data:porMes.map(m=>m.mql||0),borderColor:'#a855f7',backgroundColor:'#a855f7',pointBackgroundColor:'#a855f7'},
+                  {label:'SQL',data:porMes.map(m=>m.sql||0),borderColor:'#f59e0b',backgroundColor:'#f59e0b',pointBackgroundColor:'#f59e0b'},
+                ]} h={240}/>
+            </Bloco>
+          )}
+
+          {/* Leads recentes */}
+          {recentes.length>0&&(
+            <Bloco titulo="Leads Recentes" sub="Últimos 50 leads cadastrados na planilha" csvDados={recentes.slice(0,50)} csvNome="leads-recentes.csv">
+              <div style={{overflowX:'auto'}}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                  <thead>
+                    <tr style={{borderBottom:'2px solid #f1f5f9'}}>
+                      {['Data','Nome','Tipo','Canal / Origem','Status'].map(h=>(
+                        <th key={h} style={{padding:'8px 12px',textAlign:'left',fontSize:10,fontWeight:700,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'.05em',whiteSpace:'nowrap'}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentes.slice(0,50).map((l,i)=>(
+                      <tr key={i} style={{borderBottom:'1px solid #f8fafc',background:i%2===0?'#fff':'#fafafa'}}>
+                        <td style={{padding:'8px 12px',color:'#64748b',whiteSpace:'nowrap'}}>{l.data}</td>
+                        <td style={{padding:'8px 12px',fontWeight:600,color:'#0f172a',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.nome||'—'}</td>
+                        <td style={{padding:'8px 12px',whiteSpace:'nowrap'}}>
+                          <span style={{
+                            fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,
+                            background:l.tipo==='white_label'?'#ecfdf5':'#eef2ff',
+                            color:l.tipo==='white_label'?'#047857':'#4338ca'
+                          }}>
+                            {l.tipo==='white_label'?'White Label':'Cliente Final'}
+                          </span>
+                        </td>
+                        <td style={{padding:'8px 12px',color:'#475569',whiteSpace:'nowrap'}}>{l.canal||'—'}</td>
+                        <td style={{padding:'8px 12px',whiteSpace:'nowrap'}}>
+                          <span style={{
+                            fontSize:10,fontWeight:600,padding:'2px 8px',borderRadius:20,
+                            background:l.status?.toLowerCase().includes("8'sql")||l.status?.toLowerCase().includes('ganho')?'#fefce8':l.status?.toLowerCase().includes("7'mql")||l.status?.toLowerCase().includes('qualifica')?'#f5f3ff':'#f8fafc',
+                            color:l.status?.toLowerCase().includes("8'sql")||l.status?.toLowerCase().includes('ganho')?'#854d0e':l.status?.toLowerCase().includes("7'mql")||l.status?.toLowerCase().includes('qualifica')?'#6d28d9':'#64748b'
+                          }}>
+                            {l.status||'Lead'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Bloco>
+          )}
+
+        </div>
+      );
+    };
+
+    /* ══════════════════════════════════════════════
+       ABA 5 — ESTRATÉGIA & IA
+    ══════════════════════════════════════════════ */
+
+    const ScoreBar=({score,status})=>{
+      const col=status==='ótimo'?'#10b981':status==='bom'?'#6366f1':status==='atenção'?'#f59e0b':'#ef4444';
+      return (
+        <div style={{marginTop:8}}>
+          <div style={{height:6,background:'#f1f5f9',borderRadius:4,overflow:'hidden'}}>
+            <div style={{height:'100%',width:`${score}%`,background:col,borderRadius:4,transition:'width .6s'}}/>
+          </div>
+        </div>
+      );
+    };
+
+    /* ══════════════════════════════════════════════
+       ABA 5 — ESTRATÉGIA (placeholder separador)
+    ══════════════════════════════════════════════ */
+    const _unused=({api})=>{
+      const sm = api?.semrush;
+      const ok = !!sm && sm.dominio?.keywords > 0;
+
+      // Deduplicate keywords by best position
+      const kwsRaw = ok ? (sm.keywords||[]) : [];
+      const kwMap = {};
+      kwsRaw.forEach(k=>{
+        if(!kwMap[k.kw] || k.posicao < kwMap[k.kw].posicao) kwMap[k.kw]=k;
+      });
+      const kws = Object.values(kwMap);
+
+      const defender = kws.filter(k=>k.posicao>=1&&k.posicao<=3);
+      const atacar   = kws.filter(k=>k.posicao>=4&&k.posicao<=20);
+      const capturar = kws.filter(k=>k.posicao>20);
+
+      // Competitors sorted by traffic desc, include Helena
+      const helena = { domain:'helenacrm.com', tipo:'helena', keywords: sm?.dominio?.keywords||0, traffic: sm?.dominio?.traffic||0 };
+      const concorrentes = ok ? [helena,...(sm.concorrentes||[])] : [];
+      concorrentes.sort((a,b)=>b.traffic-a.traffic);
+      const maxTraffic = concorrentes.reduce((m,c)=>Math.max(m,c.traffic),1);
+
+      const zonaColor={'Defender':'#10b981','Atacar':'#f59e0b','Capturar':'#6366f1'};
+      const zonaBg={'Defender':'rgba(16,185,129,.12)','Atacar':'rgba(245,158,11,.12)','Capturar':'rgba(99,102,241,.12)'};
+
+      const card=(label,value,sub,color='#6366f1')=>(
+        <div style={{background:'#fff',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,.06)',borderTop:`3px solid ${color}`}}>
+          <p style={{fontSize:11,fontWeight:600,color:'#64748b',textTransform:'uppercase',letterSpacing:.5,margin:'0 0 4px'}}>{label}</p>
+          <p style={{fontSize:28,fontWeight:800,color:'#1e293b',margin:'0 0 2px'}}>{value}</p>
+          {sub&&<p style={{fontSize:11,color:'#94a3b8',margin:0}}>{sub}</p>}
+        </div>
+      );
+
+      const domainColor=(domain)=>{
+        if(domain==='helenacrm.com') return '#6366f1';
+        const diretos=['bolten.io','blackconversa.com.br','growtalks.com.br','kommo.com','botconversa.com.br'];
+        return diretos.includes(domain)?'#ef4444':'#f59e0b';
+      };
+
+      return (
+        <div style={{display:'flex',flexDirection:'column',gap:24}}>
+
+          {/* Status bar */}
+          <div style={{background: ok?'rgba(16,185,129,.08)':'rgba(245,158,11,.08)', border:`1px solid ${ok?'rgba(16,185,129,.3)':'rgba(245,158,11,.3)'}`, borderRadius:10, padding:'10px 16px', display:'flex', alignItems:'center', gap:10}}>
+            <span style={{fontSize:16}}>{ok?'✅':'⏳'}</span>
+            <span style={{fontSize:13,fontWeight:600,color: ok?'#065f46':'#92400e'}}>
+              {ok ? `SEMrush conectado · ${(sm.keywords||[]).length} palavras-chave · atualizado ${new Date(sm.atualizado).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}` : 'SEMrush carregando…'}
+            </span>
+            <span style={{marginLeft:'auto',fontSize:11,color:'#94a3b8'}}>Cache 12h · SEO Pro</span>
+          </div>
+
+          {/* Metric cards */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16}}>
+            {card('Keywords Orgânicas', ok?(sm.dominio.keywords).toLocaleString('pt-BR'):'—', 'Total no SEMrush', '#6366f1')}
+            {card('Tráfego Estimado', ok?(sm.dominio.traffic).toLocaleString('pt-BR'):'—', 'Visitas/mês SEMrush', '#10b981')}
+            {card('Defender', ok?defender.length:'—', 'Pos 1–3 · manter', '#10b981')}
+            {card('Atacar', ok?atacar.length:'—', 'Pos 4–20 · subir', '#f59e0b')}
+          </div>
+
+          {/* Two columns: competitor radar + zone summary */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:20}}>
+
+            {/* Competitor radar */}
+            <div style={{background:'#fff',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
+              <p style={{fontSize:13,fontWeight:700,color:'#1e293b',margin:'0 0 4px'}}>Radar de Concorrentes</p>
+              <p style={{fontSize:11,color:'#94a3b8',margin:'0 0 16px'}}>Tráfego orgânico estimado · SEMrush</p>
+              <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                {concorrentes.map((c,i)=>{
+                  const pct=Math.round((c.traffic/maxTraffic)*100);
+                  const isHelena=c.domain==='helenacrm.com';
+                  const col=domainColor(c.domain);
+                  return (
+                    <div key={i}>
+                      <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
+                        <span style={{fontSize:12,fontWeight:isHelena?700:500,color:isHelena?'#6366f1':'#334155'}}>
+                          {isHelena?'⭐ ':''}{c.domain}
+                          {c.tipo&&c.tipo!=='helena'&&<span style={{fontSize:10,marginLeft:6,color:'#94a3b8'}}>{c.tipo==='direto'?'direto':'conteúdo'}</span>}
+                        </span>
+                        <span style={{fontSize:12,fontWeight:600,color:'#475569'}}>{c.traffic.toLocaleString('pt-BR')}</span>
+                      </div>
+                      <div style={{height:8,background:'#f1f5f9',borderRadius:4,overflow:'hidden'}}>
+                        <div style={{height:'100%',width:pct+'%',background:col,borderRadius:4,transition:'width .4s'}}/>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{marginTop:14,display:'flex',gap:12}}>
+                <span style={{fontSize:10,color:'#94a3b8',display:'flex',alignItems:'center',gap:4}}><span style={{width:8,height:8,borderRadius:2,background:'#6366f1',display:'inline-block'}}/> Helena</span>
+                <span style={{fontSize:10,color:'#94a3b8',display:'flex',alignItems:'center',gap:4}}><span style={{width:8,height:8,borderRadius:2,background:'#ef4444',display:'inline-block'}}/> Direto</span>
+                <span style={{fontSize:10,color:'#94a3b8',display:'flex',alignItems:'center',gap:4}}><span style={{width:8,height:8,borderRadius:2,background:'#f59e0b',display:'inline-block'}}/> Conteúdo</span>
+              </div>
+            </div>
+
+            {/* Zone summary */}
+            <div style={{background:'#fff',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
+              <p style={{fontSize:13,fontWeight:700,color:'#1e293b',margin:'0 0 4px'}}>Zonas de Palavras-Chave</p>
+              <p style={{fontSize:11,color:'#94a3b8',margin:'0 0 16px'}}>Estratégia por posição</p>
+              {[
+                {zona:'Defender',kws:defender,desc:'Você já está no topo. Manter conteúdo atualizado.',color:'#10b981',bg:'rgba(16,185,129,.08)',ic:'🛡️'},
+                {zona:'Atacar',  kws:atacar,  desc:'Página 1 mas não top 3. Otimizar on-page.',color:'#f59e0b',bg:'rgba(245,158,11,.08)',ic:'⚔️'},
+                {zona:'Capturar',kws:capturar,desc:'Fora das 3 primeiras páginas. Criar conteúdo.',color:'#6366f1',bg:'rgba(99,102,241,.08)',ic:'🎯'},
+              ].map(({zona,kws:z,desc,color,bg,ic})=>(
+                <div key={zona} style={{background:bg,borderRadius:8,padding:12,marginBottom:8}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+                    <span style={{fontSize:13,fontWeight:700,color}}>{ic} {zona}</span>
+                    <span style={{fontSize:18,fontWeight:800,color}}>{z.length}</span>
+                  </div>
+                  <p style={{fontSize:11,color:'#64748b',margin:0}}>{desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Análise por Página */}
+          {ok && (sm.paginas||[]).length>0 && (
+          <div style={{background:'#fff',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
+            <p style={{fontSize:13,fontWeight:700,color:'#1e293b',margin:'0 0 4px'}}>Análise por Página</p>
+            <p style={{fontSize:11,color:'#94a3b8',margin:'0 0 16px'}}>Oportunidades e ações por URL · SEMrush</p>
+            <div style={{overflowX:'auto'}}>
+              <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                <thead>
+                  <tr style={{background:'#f8fafc'}}>
+                    {['Página','Keywords','Melhor Pos','🛡 Defender','⚔️ Atacar','🎯 Capturar','Ação Recomendada'].map(h=>(
+                      <th key={h} style={{padding:'8px 12px',textAlign:'left',fontWeight:600,color:'#64748b',borderBottom:'1px solid #e2e8f0',whiteSpace:'nowrap'}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(sm.paginas||[]).map((p,i)=>{
+                    const slug = p.url.replace(/^https?:\/\/[^/]+/,'').replace(/\/$/,'')||'/';
+                    const hasAtacar = p.atacar?.length>0;
+                    const hasDefender = p.defender?.length>0;
+                    const topKw = [...(p.defender||[]),...(p.atacar||[]),...(p.capturar||[])].sort((a,b)=>a.pos-b.pos)[0];
+                    let acao,aColor,aBg;
+                    if(hasDefender&&hasAtacar){acao='Defender + Otimizar';aColor='#059669';aBg='rgba(16,185,129,.1)';}
+                    else if(hasAtacar){acao='Otimizar on-page';aColor='#b45309';aBg='rgba(245,158,11,.1)';}
+                    else if(hasDefender){acao='Manter posição';aColor='#10b981';aBg='rgba(16,185,129,.08)';}
+                    else{acao='Criar conteúdo';aColor='#6366f1';aBg='rgba(99,102,241,.08)';}
+                    return (
+                      <tr key={i} style={{borderBottom:'1px solid #f1f5f9',background:i%2===0?'#fff':'#fafafa'}}>
+                        <td style={{padding:'8px 12px',maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                          <span style={{fontSize:12,fontWeight:600,color:'#1e293b'}}>{slug}</span>
+                          {topKw&&<div style={{fontSize:10,color:'#94a3b8',marginTop:2}}>top: "{topKw.kw}" #{topKw.pos}</div>}
+                        </td>
+                        <td style={{padding:'8px 12px',textAlign:'center',color:'#475569'}}>{p.totalKws}</td>
+                        <td style={{padding:'8px 12px',textAlign:'center',fontWeight:700,color:p.melhorPos<=3?'#10b981':p.melhorPos<=20?'#f59e0b':'#6366f1'}}>#{p.melhorPos}</td>
+                        <td style={{padding:'8px 12px',textAlign:'center',fontWeight:700,color:'#10b981'}}>{p.defender?.length||0}</td>
+                        <td style={{padding:'8px 12px',textAlign:'center',fontWeight:700,color:'#f59e0b'}}>{p.atacar?.length||0}</td>
+                        <td style={{padding:'8px 12px',textAlign:'center',fontWeight:700,color:'#6366f1'}}>{p.capturar?.length||0}</td>
+                        <td style={{padding:'8px 12px'}}>
+                          <span style={{background:aBg,color:aColor,fontWeight:700,fontSize:11,padding:'3px 8px',borderRadius:20,whiteSpace:'nowrap'}}>{acao}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div style={{marginTop:12,padding:10,background:'#f8fafc',borderRadius:8,fontSize:11,color:'#64748b'}}>
+              💡 <strong>Insight:</strong> Páginas com muitos keywords em Capturar precisam de otimização on-page ou conteúdo mais específico. Crie páginas dedicadas para grupos de keywords com intenções distintas.
+            </div>
+          </div>
+          )}
+
+          {/* Keyword zone map table */}
+          <div style={{background:'#fff',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
+            <p style={{fontSize:13,fontWeight:700,color:'#1e293b',margin:'0 0 4px'}}>Mapa de Palavras-Chave</p>
+            <p style={{fontSize:11,color:'#94a3b8',margin:'0 0 16px'}}>Top {kws.length} keywords orgânicas · ordenadas por volume</p>
+            <div style={{overflowX:'auto'}}>
+              <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                <thead>
+                  <tr style={{background:'#f8fafc'}}>
+                    {['Keyword','Zona','Posição','Volume/mês','CPC (R$)','Página'].map(h=>(
+                      <th key={h} style={{padding:'8px 12px',textAlign:'left',fontWeight:600,color:'#64748b',borderBottom:'1px solid #e2e8f0',whiteSpace:'nowrap'}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {kws.sort((a,b)=>b.volume-a.volume).map((k,i)=>{
+                    const zona = k.posicao<=3?'Defender':k.posicao<=20?'Atacar':'Capturar';
+                    const color=zonaColor[zona]; const bg=zonaBg[zona];
+                    const page = k.url ? k.url.replace(/^https?:\/\/[^/]+/,'').replace(/\/$/,'') || '/' : '—';
+                    return (
+                      <tr key={i} style={{borderBottom:'1px solid #f1f5f9',background:i%2===0?'#fff':'#fafafa'}}>
+                        <td style={{padding:'8px 12px',fontWeight:600,color:'#1e293b'}}>{k.kw}</td>
+                        <td style={{padding:'8px 12px'}}>
+                          <span style={{background:bg,color,fontWeight:700,fontSize:11,padding:'2px 8px',borderRadius:20}}>{zona}</span>
+                        </td>
+                        <td style={{padding:'8px 12px',textAlign:'center',fontWeight:700,color:k.posicao<=3?'#10b981':k.posicao<=20?'#f59e0b':'#6366f1'}}>#{k.posicao}</td>
+                        <td style={{padding:'8px 12px',textAlign:'right',color:'#475569'}}>{k.volume>0?k.volume.toLocaleString('pt-BR'):'—'}</td>
+                        <td style={{padding:'8px 12px',textAlign:'right',color:'#475569'}}>{k.cpc>0?`R$ ${k.cpc.toFixed(2)}`:'—'}</td>
+                        <td style={{padding:'8px 12px',color:'#94a3b8',fontSize:11,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{page}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      );
+    };
+
+    const AbaEstrategia=({api,diasApi=30,de,ate})=>{
+      const [openAcao,setOpenAcao]=useState(null);
+      const toMK=d=>d?String(d.getFullYear())+String(d.getMonth()+1).padStart(2,'0'):'';
+      const startKey=toMK(de);
+      const endKey=toMK(ate);
+
+      // === FONTES DE DADOS ===
+      const gscOk=!!(api?.gsc?.keywords?.length||api?.gsc?.historico?.length);
+      const ga4Ok=!!(api?.ga4?.canais?.length);
+      const smOk=!!(api?.semrush?.dominio?.keywords);
+      const dataOk=gscOk||ga4Ok||smOk;
+
+      // GSC
+      const _gscHist=api?.gsc?.historico||[];
+      const gscImp=_gscHist.length ? _gscHist.reduce((s,t)=>s+t.impressoes,0) : (api?.gsc?.impressoes||0);
+      const gscCli=_gscHist.length ? _gscHist.reduce((s,t)=>s+t.cliques,0)   : (api?.gsc?.cliques||0);
+      const gscKws=api?.gsc?.keywords||[];
+      const gscCtr=gscImp>0?(gscCli/gscImp*100):(api?.gsc?.ctrMedio||0);
+      const gscPos=gscKws.length ? gscKws.reduce((s,k)=>s+k.posicao,0)/gscKws.length : (api?.gsc?.posicaoMedia||0);
+
+      // GA4
+      const ga4Canais=api?.ga4?.canais||[];
+      const ga4Total=ga4Canais.length ? ga4Canais.reduce((s,c)=>s+c.sessoes,0) : (api?.ga4?.totalSessoes||0);
+      const ga4Org=ga4Canais.length ? (ga4Canais.find(c=>c.canal==='Organic Search')?.sessoes||0) : (api?.ga4?.sessoes||0);
+      const ga4Bounce=ga4Canais.length&&ga4Total>0 ? ga4Canais.reduce((s,c)=>s+(c.bounce*(c.sessoes/ga4Total)),0) : (api?.ga4?.bounceRate||0);
+      const orgRatio=ga4Total>0?(ga4Org/ga4Total*100):0;
+
+      // SEMrush — deduplica por melhor posição
+      const smRaw=api?.semrush?.keywords||[];
+      const kwMap={}; smRaw.forEach(k=>{if(!kwMap[k.kw]||k.posicao<kwMap[k.kw].posicao)kwMap[k.kw]=k;});
+      const smKws=Object.values(kwMap);
+      const smDef=smKws.filter(k=>k.posicao<=3);
+      const smAtacar=smKws.filter(k=>k.posicao>=4&&k.posicao<=20).sort((a,b)=>b.volume-a.volume);
+      const smCapt=smKws.filter(k=>k.posicao>20).sort((a,b)=>b.volume-a.volume);
+      const smTotal=api?.semrush?.dominio?.keywords||0;
+      const smTraf=api?.semrush?.dominio?.traffic||0;
+      const smConc=api?.semrush?.concorrentes||[];
+      const smDiretos=smConc.filter(c=>c.tipo==='direto').sort((a,b)=>b.traffic-a.traffic);
+      const smConteudo=smConc.filter(c=>c.tipo==='conteudo').sort((a,b)=>b.traffic-a.traffic);
+      const topDir=smDiretos[0];
+
+      // === SCORES DINÂMICOS ===
+      const sCtr=gscCtr>5?35:gscCtr>3?28:gscCtr>2?20:gscCtr>1?12:5;
+      const sPos=gscPos<3?28:gscPos<5?22:gscPos<10?15:gscPos<20?8:3;
+      const sDef=smDef.length>=5?22:smDef.length>=3?16:smDef.length>=1?10:3;
+      const sAtak=Math.min(15,smAtacar.length*2);
+      const seoScore=gscOk?Math.min(100,Math.round(sCtr+sPos+sDef+sAtak)):0;
+
+      const tBnc=ga4Bounce<40?35:ga4Bounce<55?26:ga4Bounce<65?17:ga4Bounce<75?10:4;
+      const tSes=ga4Total>100000?30:ga4Total>50000?24:ga4Total>20000?17:ga4Total>5000?11:5;
+      const tOrg=orgRatio>50?25:orgRatio>35?19:orgRatio>20?13:orgRatio>10?8:3;
+      const trafegoScore=ga4Ok?Math.min(100,Math.round(tBnc+tSes+tOrg)):0;
+
+      const aKw=smTotal>10000?35:smTotal>5000?28:smTotal>2000?20:smTotal>1000?14:6;
+      const aAtk=smAtacar.length>=15?30:smAtacar.length>=8?22:smAtacar.length>=4?15:smAtacar.length>=1?9:3;
+      const aDef=smDef.length>=5?25:smDef.length>=3?18:smDef.length>=1?11:4;
+      const autoridadeScore=smOk?Math.min(100,Math.round(aKw+aAtk+aDef)):0;
+
+      const activePilares=[gscOk,ga4Ok,smOk].filter(Boolean).length||1;
+      const overallScore=dataOk?Math.round((seoScore+trafegoScore+autoridadeScore)/activePilares):0;
+      const scoreColor=overallScore>=80?'#10b981':overallScore>=65?'#6366f1':overallScore>=50?'#f59e0b':'#ef4444';
+      const scoreLabel=overallScore>=80?'Ótimo':overallScore>=65?'Bom':overallScore>=50?'Atenção':'Crítico';
+
+      // === LEADS DATA ===
+      const leadsRaw=api?.leads||{};
+      const lMes=(leadsRaw.porMes||[]).filter(m=>(!startKey||m.mesKey>=startKey)&&(!endKey||m.mesKey<=endKey));
+      const lCanalMes=(leadsRaw.porCanalMes||[]).filter(c=>(!startKey||c.mesKey>=startKey)&&(!endKey||c.mesKey<=endKey));
+      const lTotal=lMes.reduce((s,m)=>s+(m.total||0),0);
+      const lCf=lMes.reduce((s,m)=>s+(m.cf||0),0);
+      const lWl=lMes.reduce((s,m)=>s+(m.wl||0),0);
+      const lMql=lMes.reduce((s,m)=>s+(m.mql||0),0);
+      const lSql=lMes.reduce((s,m)=>s+(m.sql||0),0);
+      const lPago=lMes.reduce((s,m)=>s+(m.pago||0),0);
+      const lOrg=lMes.reduce((s,m)=>s+(m.organico||0),0);
+      const leadsOk=lTotal>0;
+      const mqlRate=lTotal>0?((lMql+lSql)/lTotal*100):0;
+      const cfRate=lTotal>0?(lCf/lTotal*100):0;
+      const wlRate=lTotal>0?(lWl/lTotal*100):0;
+      const pagoRate=lTotal>0?(lPago/lTotal*100):0;
+      const orgLeadRate=lTotal>0?(lOrg/lTotal*100):0;
+      // Traffic → Lead conversion
+      const trafficLeadRate=ga4Total>0&&lTotal>0?(lTotal/ga4Total*100):0;
+      // Top converting channel
+      const canalConvMap={};
+      lCanalMes.forEach(c=>{
+        if(!canalConvMap[c.canal])canalConvMap[c.canal]={canal:c.canal,count:0,mql:0,sql:0,cf:0,wl:0,tipoOrigem:c.tipoOrigem};
+        const e=canalConvMap[c.canal];
+        e.count+=c.count;e.mql+=(c.mql||0);e.sql+=(c.sql||0);e.cf+=(c.cf||0);e.wl+=(c.wl||0);
+      });
+      const canalList=Object.values(canalConvMap).filter(c=>c.count>=3);
+      const topConvCanal=[...canalList].sort((a,b)=>((b.mql+b.sql)/b.count)-((a.mql+a.sql)/a.count))[0];
+      const topVolCanal=[...canalList].sort((a,b)=>b.count-a.count)[0];
+      const pagoMqlRate=canalList.filter(c=>c.tipoOrigem==='pago').reduce((s,c)=>({mql:s.mql+(c.mql||0),sql:s.sql+(c.sql||0),count:s.count+c.count}),{mql:0,sql:0,count:0});
+      const orgMqlRate=canalList.filter(c=>c.tipoOrigem==='organico').reduce((s,c)=>({mql:s.mql+(c.mql||0),sql:s.sql+(c.sql||0),count:s.count+c.count}),{mql:0,sql:0,count:0});
+      const pagoConvPct=pagoMqlRate.count>0?((pagoMqlRate.mql+pagoMqlRate.sql)/pagoMqlRate.count*100):0;
+      const orgConvPct=orgMqlRate.count>0?((orgMqlRate.mql+orgMqlRate.sql)/orgMqlRate.count*100):0;
+
+      const pilares=[
+        {area:'SEO & Conteúdo',score:seoScore,ic:'🔍',
+         desc:`CTR ${gscCtr.toFixed(1)}% · Pos. média ${gscPos.toFixed(1)} · ${smDef.length} keywords top 3 · ${smAtacar.length} para atacar`},
+        {area:'Tráfego & Engajamento',score:trafegoScore,ic:'📊',
+         desc:`${ga4Total.toLocaleString('pt-BR')} sessões · ${ga4Bounce.toFixed(1)}% bounce · ${orgRatio.toFixed(0)}% orgânico`},
+        {area:'Autoridade & Competição',score:autoridadeScore,ic:'🏆',
+         desc:`${smTotal.toLocaleString('pt-BR')} keywords orgânicas · ${smDef.length} Defender · ${smAtacar.length} Atacar · ${smCapt.length} Capturar`},
+      ];
+
+      // === OPORTUNIDADES ===
+      const topAtacar410=smAtacar.filter(k=>k.posicao<=10).slice(0,3);
+      const gscLowCtr=gscKws.filter(k=>k.impressoes>500&&k.ctr<2&&k.posicao<20)
+        .sort((a,b)=>b.impressoes-a.impressoes).slice(0,4);
+      const topCapt=smCapt.filter(k=>k.volume>500).slice(0,3);
+
+      // Páginas do SEMrush para ações específicas
+      const smPaginas=api?.semrush?.paginas||[];
+      const paginasAtacar=smPaginas.filter(p=>p.atacar?.length>0).sort((a,b)=>b.atacar.length-a.atacar.length);
+      const paginasCapturar=smPaginas.filter(p=>p.atacar?.length===0&&p.capturar?.length>0).sort((a,b)=>b.totalVol-a.totalVol);
+
+      // === DIAGNÓSTICO CRUZADO: GSC × SEMrush por página ===
+      const gscPaginas=api?.gsc?.paginas||[];
+      const paginasDiagnostico=smPaginas.map(sp=>{
+        const slug=sp.url.replace(/^https?:\/\/[^/]+/,'').replace(/\/$/,'')||'/';
+        const gscMatch=gscPaginas.find(g=>{
+          const gs=g.url.replace(/^https?:\/\/[^/]+/,'').replace(/\/$/,'')||'/';
+          return gs===slug||g.url===sp.url||g.url.includes(slug)||sp.url.includes(gs);
+        });
+        const sinais=[];
+        const acoesPagina=[];
+        if(sp.atacar?.length>0){sinais.push(`${sp.atacar.length} keyword(s) na zona Atacar`);acoesPagina.push('otimizar_on_page');}
+        if(sp.capturar?.length>0){sinais.push(`${sp.capturar.length} keyword(s) na zona Capturar`);acoesPagina.push('enriquecer_conteudo');}
+        if(sp.defender?.length>0) sinais.push(`${sp.defender.length} keyword(s) no top 3 (defender)`);
+        if(gscMatch){
+          if(gscMatch.ctr<2&&gscMatch.impressoes>300){sinais.push(`CTR de ${gscMatch.ctr.toFixed(1)}% no GSC`);acoesPagina.push('melhorar_snippet');}
+          if(gscMatch.posicao>10&&gscMatch.impressoes>500) sinais.push(`pos #${Math.round(gscMatch.posicao)} no GSC com ${gscMatch.impressoes.toLocaleString('pt-BR')} impressões`);
+        }
+        const prioridade=acoesPagina.includes('otimizar_on_page')&&acoesPagina.includes('melhorar_snippet')?'alta':
+          acoesPagina.includes('otimizar_on_page')?'alta':
+          acoesPagina.includes('melhorar_snippet')?'alta':'média';
+        return {...sp,slug,gscMatch,sinais,acoesPagina,prioridade,
+          scoreOportunidade:(sp.atacar?.length||0)*3+(sp.capturar?.length||0)*1+(gscMatch?.impressoes||0)/1000};
+      }).filter(p=>p.sinais.length>0).sort((a,b)=>b.scoreOportunidade-a.scoreOportunidade);
+
+      // === PLANO DE AÇÃO COM PASSO A PASSO ===
+      const acoes=[];
+
+      paginasAtacar.slice(0,2).forEach((p,i)=>{
+        const slug=p.url.replace(/^https?:\/\/[^/]+/,'').replace(/\/$/,'')||'/';
+        const topKw=[...p.atacar].sort((a,b)=>b.vol-a.vol)[0];
+        const outrasKws=p.atacar.slice(1,3).map(k=>`"${k.kw}"`).join(', ');
+        acoes.push({
+          prioridade:'alta',zona:'SEO · Página',prazo:i===0?'1-2 semanas':'2-3 semanas',icone:'⚔️',
+          titulo:`Otimizar "${slug}" — subir ${p.atacar.length} keyword(s) para o top 3`,
+          contexto:`"${topKw.kw}" está na posição #${topKw.pos} com ${topKw.vol.toLocaleString('pt-BR')} buscas/mês.${outrasKws?' Outras keywords na mesma página: '+outrasKws+'.':''} Otimizando esta página corretamente é possível chegar ao top 3 e capturar ~${Math.round(topKw.vol*0.10).toLocaleString('pt-BR')} cliques/mês só para essa keyword.`,
+          passos:[
+            `Acesse a página "${slug}" no seu CMS`,
+            `Reescreva o H1 incluindo a keyword exata: "${topKw.kw}" — deve aparecer no início do título`,
+            `Atualize a meta description (máx 155 chars): mencione "${topKw.kw}" e termine com CTA. Ex: "Como usar ${topKw.kw} no seu negócio — guia completo com exemplos práticos e como começar hoje."`,
+            `Adicione seção FAQ ao final do artigo com 4-6 perguntas (use as sugestões do Google ao pesquisar a keyword)`,
+            `Adicione schema markup JSON-LD do tipo FAQ para aparecer nos rich snippets do Google`,
+            `Crie 2-3 links internos de outras páginas do site apontando para esta URL`,
+            `Submeta a URL para reindexação: Search Console → URL Inspection → Solicitar indexação`,
+          ],
+          potencial:`+${Math.round(p.atacar.reduce((s,k)=>s+k.vol,0)*0.06).toLocaleString('pt-BR')} cliques/mês estimados ao subir para top 3`,
+        });
+      });
+
+      if(gscLowCtr.length>0){
+        const k=gscLowCtr[0];
+        acoes.push({
+          prioridade:'alta',zona:'CTR',prazo:'Esta semana',icone:'✍️',
+          titulo:`Melhorar snippet de "${k.query}" — apenas ${k.ctr.toFixed(1)}% CTR com ${k.impressoes.toLocaleString('pt-BR')} impressões/mês`,
+          contexto:`Esta keyword aparece ${k.impressoes.toLocaleString('pt-BR')} vezes/mês no Google (pos #${Math.round(k.posicao)}), mas só ${k.ctr.toFixed(1)}% dos usuários clicam. A média saudável é >3%. Isso significa que o título e a descrição não estão atraindo — e é a oportunidade de maior ganho rápido sem criar nenhum conteúdo novo.`,
+          passos:[
+            `Abra o Google Search Console → aba "Consultas" → filtre por "${k.query}" → identifique qual URL está aparecendo`,
+            `Acesse essa página no CMS`,
+            `Reescreva o Title Tag (máx 60 chars): inclua a keyword no início + número ou promessa clara. Ex: "${k.query.charAt(0).toUpperCase()+k.query.slice(1)}: Guia Completo [2026]" ou "Como usar ${k.query} — passo a passo"`,
+            `Reescreva a Meta Description (máx 155 chars): comece com benefício + inclua a keyword + termine com CTA. Ex: "Integre ${k.query} ao seu negócio em minutos. Veja como configurar, quais os custos e como evitar erros comuns."`,
+            `Não altere a URL (mudança de URL derruba o ranqueamento)`,
+            `Monitore o CTR no Search Console após 7-14 dias para confirmar melhora`,
+          ],
+          potencial:`+${Math.round(k.impressoes*0.025).toLocaleString('pt-BR')} cliques/mês sem criar nenhum conteúdo novo`,
+        });
+      }
+
+      if(gscLowCtr.length>1){
+        const extras=gscLowCtr.slice(1);
+        acoes.push({
+          prioridade:'alta',zona:'CTR',prazo:'Semana 1-2',icone:'✍️',
+          titulo:`Otimizar snippets de mais ${extras.length} página(s) com CTR abaixo do esperado`,
+          contexto:`${extras.map(k=>`"${k.query}" (${k.impressoes.toLocaleString('pt-BR')} impressões, ${k.ctr.toFixed(1)}% CTR)`).join(' · ')}. Todas estão na primeira ou segunda página do Google mas perdem cliques por títulos e descrições fracos.`,
+          passos:extras.slice(0,3).map((k,j)=>(
+            `Página ${j+1}: busque "${k.query}" no Search Console → identifique a URL → atualize title (60 chars com keyword no início) e meta description (155 chars com CTA)`
+          )).concat([
+            `Para cada página: teste variações de título com pergunta ("Como…?"), número ("5 formas de…") ou promessa direta ("Veja como…")`,
+            `Monitore o CTR semanalmente no Search Console`,
+          ]),
+          potencial:`+${Math.round(extras.reduce((s,k)=>s+k.impressoes,0)*0.02).toLocaleString('pt-BR')} cliques adicionais/mês`,
+        });
+      }
+
+      if(ga4Bounce>55)
+        acoes.push({
+          prioridade:ga4Bounce>65?'alta':'média',zona:'Conversão & UX',prazo:'2-3 semanas',icone:'🎯',
+          titulo:`Reduzir bounce rate de ${ga4Bounce.toFixed(1)}% — usuários chegam mas não ficam`,
+          contexto:`Bounce rate de ${ga4Bounce.toFixed(1)}% significa que ~${Math.round(ga4Total*ga4Bounce/100).toLocaleString('pt-BR')} visitantes/mês saem sem interagir com mais nada. ${ga4Bounce>65?'Nível crítico — as páginas de entrada não estão entregando o que o usuário espera.':'Acima do ideal (meta: <55%) — melhorias de UX podem segurar mais usuários e aumentar conversões.'}`,
+          passos:[
+            `Abra o GA4 → Relatórios → Engajamento → Páginas de destino — identifique as 3-5 páginas com maior bounce e maior tráfego`,
+            `Em cada uma: adicione um botão CTA visível nos primeiros 300px da página (acima do fold) com texto direto: "Fale com a gente", "Solicitar demonstração" etc`,
+            `Verifique a velocidade no PageSpeed Insights (meta: >80 pontos mobile) — imagens sem compressão são a causa mais comum de saída`,
+            `Adicione links internos em destaque no corpo do texto para direcionar para outras páginas relevantes`,
+            `Inclua bloco "Leia também" ou "Conteúdo relacionado" ao final de cada artigo`,
+            `Considere um pop-up leve de captura de lead (aparece após 30s ou 50% de scroll) com oferta de valor`,
+          ],
+          potencial:`Meta <55% bounce = +${Math.round(ga4Total*(ga4Bounce-55)/100*0.25).toLocaleString('pt-BR')} sessões engajadas/mês`,
+        });
+
+      if(smDef.length>0)
+        acoes.push({
+          prioridade:'média',zona:'Defesa SEO',prazo:'1 mês',icone:'🛡️',
+          titulo:`Proteger ${smDef.length} keyword(s) no top 3 contra concorrentes`,
+          contexto:`Posições no top 3 são valiosas e podem ser tomadas por concorrentes que publicam conteúdo mais atualizado. As keywords ${smDef.map(k=>`"${k.kw}" (#${k.posicao})`).join(', ')} precisam de manutenção ativa.`,
+          passos:[
+            `Configure alerta de posição para essas keywords no Search Console (Desempenho → filtrar por query)`,
+            `Atualize o conteúdo das páginas que rankeiam: adicione dados de 2025/2026, novos exemplos, seções novas`,
+            `Adicione schema markup (FAQ, Article, BreadcrumbList) nas páginas que ainda não têm`,
+            `Fortaleça os links internos: garanta que pelo menos 3 outros posts do site linkam para cada página do top 3`,
+            `Verifique mensalmente se concorrentes estão subindo para essas posições`,
+          ],
+          potencial:`Manter ${smTraf.toLocaleString('pt-BR')} visitas/mês de tráfego orgânico conquistado`,
+        });
+
+      if(topDir&&topDir.traffic>smTraf*2)
+        acoes.push({
+          prioridade:'média',zona:'Competitivo',prazo:'2-3 meses',icone:'🔭',
+          titulo:`Fechar gap com ${topDir.domain} — ${Math.round(topDir.traffic/Math.max(smTraf,1))}x mais tráfego orgânico`,
+          contexto:`${topDir.domain} tem ${topDir.traffic.toLocaleString('pt-BR')} visitas/mês vs ${smTraf.toLocaleString('pt-BR')} da Helena — ${(topDir.traffic-smTraf).toLocaleString('pt-BR')} visitas de diferença. Eles rankeiam para ${topDir.keywords.toLocaleString('pt-BR')} keywords. Parte desse volume pode ser capturado mapeando onde eles são fracos.`,
+          passos:[
+            `No SEMrush → "Keyword Gap" → compare helenacrm.com vs ${topDir.domain}`,
+            `Filtre: keywords onde ${topDir.domain} está pos 1-10 e Helena não aparece (ou está acima de pos 20)`,
+            `Priorize keywords com dificuldade < 35 e volume > 300/mês`,
+            `Para cada keyword priorizada: crie um artigo otimizado ou adapte uma página existente`,
+            `Meta: publicar 2 artigos/mês nessas keywords por 3 meses consecutivos`,
+            `Monitore o progresso mensalmente no SEMrush`,
+          ],
+          potencial:`Reduzir gap competitivo + capturar demanda que hoje vai para ${topDir.domain}`,
+        });
+
+      if(paginasCapturar.length>0){
+        const p=paginasCapturar[0];
+        const slug=p.url.replace(/^https?:\/\/[^/]+/,'').replace(/\/$/,'')||'/';
+        const topKws=[...p.capturar].sort((a,b)=>b.vol-a.vol).slice(0,3);
+        acoes.push({
+          prioridade:'média',zona:'Conteúdo · Página',prazo:'2-4 semanas',icone:'📝',
+          titulo:`Enriquecer "${slug}" — ${p.capturar.length} keywords entre pos 21+ esperando empurrão`,
+          contexto:`O Google já entende que a página fala sobre esses temas (por isso aparece), mas ainda não a considera boa o suficiente para o top 20. Com mais conteúdo de qualidade, é possível subir as keywords da zona Capturar para Atacar em 4-8 semanas.`,
+          passos:[
+            `Abra a página "${slug}" no CMS`,
+            `Identifique lacunas: compare seu conteúdo com os 3 primeiros resultados do Google para "${topKws[0]?.kw}"`,
+            `Adicione novas seções H2/H3 para cobrir: ${topKws.map(k=>`"${k.kw}"`).join(', ')}`,
+            `Cada nova seção deve ter: heading com a keyword + pelo menos 200 palavras de conteúdo relevante e original`,
+            `Inclua imagens com alt text contendo as keywords`,
+            `Atualize a data de publicação e submeta a URL para reindexação no Search Console`,
+            `Monitore a movimentação das keywords em 3-4 semanas no SEMrush`,
+          ],
+          potencial:`${p.capturar.length} keywords subindo para zona Atacar = visibilidade para ${p.totalVol.toLocaleString('pt-BR')} buscas/mês`,
+        });
+      }
+
+      if(orgRatio<30)
+        acoes.push({
+          prioridade:'baixa',zona:'Estratégia de Conteúdo',prazo:'3-6 meses',icone:'📅',
+          titulo:`Canal orgânico em ${orgRatio.toFixed(0)}% — construir base para reduzir dependência de ads`,
+          contexto:`Atualmente ${orgRatio.toFixed(0)}% das sessões vêm de orgânico. Com uma estratégia consistente de conteúdo focada nas keywords da zona Atacar, é possível aumentar esse percentual e reduzir o custo de aquisição a longo prazo.`,
+          passos:[
+            `Defina calendário editorial: 2-4 artigos/mês`,
+            `Priorize as keywords da zona Atacar com maior volume: ${smAtacar.slice(0,3).map(k=>`"${k.kw}" #${k.posicao} (${k.volume.toLocaleString('pt-BR')}/mês)`).join(', ')}`,
+            `Use estrutura pilar + cluster: 1 artigo longo principal (2.000+ palavras) + 3-4 artigos secundários interligados`,
+            `Distribua cada artigo publicado em LinkedIn, newsletter e outros canais sociais`,
+            `Acompanhe o crescimento orgânico mensalmente no GA4 — meta: orgânico > 35% do total`,
+          ],
+          potencial:`Meta orgânico >35% = custo de aquisição 3-5x menor que canais pagos a longo prazo`,
+        });
+
+      // Leads-specific actions
+      if(leadsOk&&mqlRate<10&&lTotal>=10)
+        acoes.push({
+          prioridade:'alta',zona:'Funil · Qualificação',prazo:'Imediato',icone:'🎯',
+          titulo:`Taxa MQL+SQL de ${mqlRate.toFixed(1)}% — apenas ${lMql+lSql} de ${lTotal} leads avançam no funil`,
+          contexto:`A média saudável para SaaS é 15-25% de leads chegando a MQL. Com ${lTotal} leads no período e só ${mqlRate.toFixed(1)}% qualificando, há uma perda significativa de oportunidade no topo do funil.`,
+          passos:[
+            `Revise o formulário de captura — perguntas qualificadoras (segmento, tamanho da equipe, urgência) filtram leads frios na entrada`,
+            `Configure sequência de nutrição automática para leads novos (3-5 e-mails em 2 semanas)`,
+            `Defina critério claro de MQL no CRM: ex. lead que acessou página de preços + abriu e-mail + tem CNPJ ativo`,
+            `Implante lead scoring básico: +10 pts por visita ao site, +20 pts por demo solicitada, +5 pts por e-mail aberto`,
+            `Revise mensagem dos anúncios — promessa do ad deve alinhar com a oferta real para atrair lead mais qualificado`,
+          ],
+          potencial:`Dobrar a taxa MQL para ~${(mqlRate*2).toFixed(0)}% = +${Math.round(lTotal*mqlRate/100)} oportunidades quentes adicionais`,
+        });
+
+      if(leadsOk&&pagoRate>75&&lOrg>0)
+        acoes.push({
+          prioridade:'média',zona:'Diversificação · Canal',prazo:'2-3 meses',icone:'⚖️',
+          titulo:`${pagoRate.toFixed(0)}% dos leads vêm de tráfego pago — reduzir dependência`,
+          contexto:`Atualmente ${Math.round(lPago)} leads pagos vs ${Math.round(lOrg)} orgânicos. Alta dependência de ads significa que qualquer corte de budget para o pipeline de leads. Orgânico já traz ${orgLeadRate.toFixed(0)}% dos leads com custo zero.`,
+          passos:[
+            `Identifique as campanhas de ads com menor ROI — redirecione budget para conteúdo orgânico`,
+            `Publique 2 artigos/mês focados nas keywords da zona Atacar que têm intenção comercial`,
+            `Invista em SEO técnico: velocidade de página, schema markup, link building interno`,
+            `Ative e-mail marketing para reativar base existente sem custo de aquisição`,
+            `Meta: elevar leads orgânicos de ${orgLeadRate.toFixed(0)}% para >35% em 3 meses`,
+          ],
+          potencial:`Reduzir CAC em 30-50% ao equilibrar mix pago × orgânico`,
+        });
+
+      if(leadsOk&&wlRate<20&&lTotal>=10)
+        acoes.push({
+          prioridade:'média',zona:'Segmento · White Label',prazo:'1-2 meses',icone:'🏷️',
+          titulo:`White Label representa ${wlRate.toFixed(0)}% dos leads — oportunidade de crescimento`,
+          contexto:`Leads WL têm ticket médio maior e geram receita recorrente mais previsível. Com apenas ${Math.round(lWl)} leads WL de ${lTotal} totais (${wlRate.toFixed(0)}%), há espaço para crescer esse segmento estrategicamente.`,
+          passos:[
+            `Crie landing page dedicada para o modelo White Label com benefícios para agências`,
+            `Separe campanhas de ads com criativos específicos para o público de agências e revendas`,
+            `Produza conteúdo de funil médio voltado a agências: "Como criar seu CRM White Label", cases de parceiros`,
+            `Configure segmentação no CRM: leads WL entram em fluxo de nutrição específico para revendas`,
+            `Programe webinar ou demonstração ao vivo mensal voltado a interessados no modelo WL`,
+          ],
+          potencial:`Elevar WL de ${wlRate.toFixed(0)}% para >30% do mix = crescimento de receita de alto valor`,
+        });
+
+      // === RESUMO EXECUTIVO DINÂMICO ===
+      const topAtak=smAtacar[0];
+      const ondeEstaBem=[];
+      if(gscCtr>=3) ondeEstaBem.push(`CTR de ${gscCtr.toFixed(1)}% acima da média do mercado`);
+      if(smDef.length>0) ondeEstaBem.push(`${smDef.length} keyword(s) consolidadas no top 3 do Google`);
+      if(ga4Bounce<55) ondeEstaBem.push(`Bounce rate de ${ga4Bounce.toFixed(1)}% dentro do esperado para SaaS`);
+      if(smAtacar.length>5) ondeEstaBem.push(`${smAtacar.length} keywords na zona Atacar mostram crescimento de autoridade`);
+      if(gscImp>100000) ondeEstaBem.push(`${gscImp.toLocaleString('pt-BR')} impressões em ${diasApi} dias — boa visibilidade no Google`);
+      if(leadsOk&&mqlRate>=15) ondeEstaBem.push(`Taxa MQL+SQL de ${mqlRate.toFixed(1)}% — funil com boa qualificação`);
+      if(leadsOk&&wlRate>=25) ondeEstaBem.push(`${wlRate.toFixed(0)}% dos leads são White Label — segmento de alto valor ativo`);
+      if(leadsOk&&orgLeadRate>=30) ondeEstaBem.push(`${orgLeadRate.toFixed(0)}% dos leads vêm de orgânico — aquisição sustentável`);
+      if(ondeEstaBem.length===0) ondeEstaBem.push('Dados conectados e monitoramento ativo de todos os canais');
+
+      const maioresOps=[];
+      if(topAtak) maioresOps.push(`"${topAtak.kw}" em #${topAtak.posicao} com ${topAtak.volume.toLocaleString('pt-BR')} buscas/mês — maior oportunidade SEO agora`);
+      if(gscLowCtr.length>0) maioresOps.push(`${gscLowCtr.length} páginas perdendo cliques por snippets fracos — ganho rápido sem criar conteúdo`);
+      if(ga4Bounce>55) maioresOps.push(`Bounce de ${ga4Bounce.toFixed(1)}% indica gap de UX/conversão nas páginas de entrada`);
+      if(leadsOk&&mqlRate<10) maioresOps.push(`Taxa MQL de ${mqlRate.toFixed(1)}% — otimizar qualificação pode dobrar oportunidades quentes`);
+      if(leadsOk&&pagoRate>75) maioresOps.push(`${pagoRate.toFixed(0)}% de leads pagos — diversificar canal reduz risco e CAC`);
+      if(topDir&&topDir.traffic>smTraf*2) maioresOps.push(`${topDir.domain} com ${topDir.traffic.toLocaleString('pt-BR')} visitas/mês — concorrente direto a fechar gap`);
+
+      const proximosPassos=[];
+      if(leadsOk&&mqlRate<10) proximosPassos.push(`Revisar critério de MQL no CRM — taxa atual de ${mqlRate.toFixed(1)}% está abaixo do ideal`);
+      if(topAtak) proximosPassos.push(`Otimizar "${topAtak.kw}" — H1, meta description e FAQ schema`);
+      if(gscLowCtr.length>0) proximosPassos.push(`Reescrever title/meta das ${gscLowCtr.length} páginas com CTR < 2%`);
+      if(smDef.length>0) proximosPassos.push(`Monitorar keywords top 3 — defesa de posição conquistada`);
+      if(topCapt.length>0) proximosPassos.push(`Planejar artigo para "${topCapt[0]?.kw}" (${topCapt[0]?.volume?.toLocaleString('pt-BR')}/mês)`);
+      if(leadsOk&&wlRate<20) proximosPassos.push(`Criar LP dedicada para White Label — segmento com maior valor de contrato`);
+
+      const pColor=p=>p==='alta'?'#dc2626':p==='média'?'#d97706':'#6366f1';
+      const pBg=p=>p==='alta'?'#fef2f2':p==='média'?'#fffbeb':'#eef2ff';
+      const pBorder=p=>p==='alta'?'#fecaca':p==='média'?'#fde68a':'#c7d2fe';
+
+      return (
+        <div style={{display:'flex',flexDirection:'column',gap:20}}>
+
+          {/* Status bar */}
+          <div style={{background:dataOk?'rgba(16,185,129,.08)':'rgba(245,158,11,.08)',border:`1px solid ${dataOk?'rgba(16,185,129,.3)':'rgba(245,158,11,.3)'}`,borderRadius:10,padding:'10px 16px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+            <span style={{fontSize:16}}>{dataOk?'✅':'⏳'}</span>
+            <span style={{fontSize:13,fontWeight:600,color:dataOk?'#065f46':'#92400e'}}>
+              {dataOk
+                ? [gscOk&&`GSC (${gscImp.toLocaleString('pt-BR')} impressões · ${gscCli.toLocaleString('pt-BR')} cliques)`,ga4Ok&&`GA4 (${ga4Total.toLocaleString('pt-BR')} sessões)`,smOk&&`SEMrush (${smTotal.toLocaleString('pt-BR')} keywords)`].filter(Boolean).join(' + ')
+                : 'Aguardando dados…'}
+            </span>
+            {!smOk&&dataOk&&<span style={{fontSize:11,background:'#fffbeb',color:'#92400e',padding:'2px 10px',borderRadius:20,border:'1px solid #fde68a'}}>SEMrush não conectado</span>}
+            <span style={{marginLeft:'auto',fontSize:11,color:'#94a3b8'}}>Últimos {diasApi} dias</span>
+          </div>
+
+          {/* Cruzamento Leads × Tráfego */}
+          {leadsOk&&ga4Total>0&&(
+          <div style={{background:'#fff',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+              <div style={{background:'#f0fdf4',borderRadius:8,padding:'6px 8px',fontSize:18}}>🔗</div>
+              <div>
+                <h4 style={{fontSize:14,fontWeight:700,color:'#1e293b',margin:0}}>Cruzamento: Leads × Tráfego</h4>
+                <p style={{fontSize:11,color:'#94a3b8',margin:'2px 0 0'}}>Funil completo — como o tráfego se converte em leads qualificados</p>
+              </div>
+            </div>
+            {/* Funil visual */}
+            <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:16,flexWrap:'wrap'}}>
+              {[
+                {label:'Sessões GA4',val:ga4Total,color:'#6366f1',pct:null},
+                {label:'Leads',val:lTotal,color:'#0891b2',pct:trafficLeadRate>0?`${trafficLeadRate.toFixed(2)}% conv.`:null},
+                {label:'MQL + SQL',val:lMql+lSql,color:mqlRate>=15?'#059669':'#d97706',pct:mqlRate>0?`${mqlRate.toFixed(1)}% dos leads`:null},
+              ].map((f,i,arr)=>(
+                <React.Fragment key={i}>
+                  <div style={{flex:1,minWidth:110,background:'#f8fafc',borderRadius:10,padding:'10px 14px',textAlign:'center',border:'1px solid #e2e8f0'}}>
+                    <p style={{fontSize:10,color:'#94a3b8',margin:'0 0 3px',fontWeight:600,textTransform:'uppercase',letterSpacing:'.05em'}}>{f.label}</p>
+                    <p style={{fontSize:20,fontWeight:800,color:f.color,margin:'0 0 2px'}}>{f.val.toLocaleString('pt-BR')}</p>
+                    {f.pct&&<p style={{fontSize:10,color:'#64748b',margin:0,fontWeight:600}}>{f.pct}</p>}
+                  </div>
+                  {i<arr.length-1&&<span style={{color:'#cbd5e1',fontSize:18,flexShrink:0}}>→</span>}
+                </React.Fragment>
+              ))}
+            </div>
+            {/* Insights cruzados */}
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(240px,1fr))',gap:10}}>
+              {[
+                pagoConvPct>0&&orgConvPct>0&&{
+                  ic:pagoConvPct>orgConvPct?'📣':'🌱',
+                  txt:`Leads ${pagoConvPct>orgConvPct?'pagos':'orgânicos'} convertem ${Math.abs(pagoConvPct-orgConvPct).toFixed(1)}pp ${pagoConvPct>orgConvPct?'mais':'menos'} — pago ${pagoConvPct.toFixed(1)}% MQL vs orgânico ${orgConvPct.toFixed(1)}%`,
+                  color:pagoConvPct>orgConvPct?'#dc2626':'#059669',bg:pagoConvPct>orgConvPct?'#fef2f2':'#f0fdf4',
+                },
+                topConvCanal&&{
+                  ic:'🏆',
+                  txt:`Canal com maior taxa de conversão: ${topConvCanal.canal} — ${((topConvCanal.mql+topConvCanal.sql)/topConvCanal.count*100).toFixed(1)}% MQL+SQL de ${topConvCanal.count} leads`,
+                  color:'#7c3aed',bg:'#f5f3ff',
+                },
+                orgRatio>0&&orgLeadRate>0&&Math.abs(orgRatio-orgLeadRate)>10&&{
+                  ic:orgRatio>orgLeadRate?'⚠️':'✅',
+                  txt:orgRatio>orgLeadRate
+                    ?`Orgânico gera ${orgRatio.toFixed(0)}% do tráfego mas só ${orgLeadRate.toFixed(0)}% dos leads — gap de conversão orgânica`
+                    :`Orgânico gera ${orgLeadRate.toFixed(0)}% dos leads com apenas ${orgRatio.toFixed(0)}% do tráfego — alta eficiência`,
+                  color:orgRatio>orgLeadRate?'#d97706':'#059669',bg:orgRatio>orgLeadRate?'#fffbeb':'#f0fdf4',
+                },
+                topVolCanal&&{
+                  ic:'📊',
+                  txt:`Maior volume: ${topVolCanal.canal} com ${topVolCanal.count} leads · CF: ${topVolCanal.cf} · WL: ${topVolCanal.wl}`,
+                  color:'#0891b2',bg:'#ecfeff',
+                },
+              ].filter(Boolean).slice(0,4).map((ins,i)=>(
+                <div key={i} style={{background:ins.bg,borderRadius:10,padding:'10px 14px',display:'flex',gap:10,alignItems:'flex-start'}}>
+                  <span style={{fontSize:16,flexShrink:0,marginTop:1}}>{ins.ic}</span>
+                  <p style={{fontSize:12,color:ins.color,fontWeight:600,margin:0,lineHeight:1.45}}>{ins.txt}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          )}
+
+          {/* Score geral + pilares */}
+          <div style={{display:'grid',gridTemplateColumns:'200px 1fr',gap:16,alignItems:'start'}}>
+            <div style={{background:'#fff',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,.06)',textAlign:'center',display:'flex',flexDirection:'column',alignItems:'center',gap:8}}>
+              <p style={{fontSize:10,fontWeight:700,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'.06em',margin:0}}>Score de Saúde Digital</p>
+              <div style={{position:'relative',width:100,height:100}}>
+                <svg viewBox="0 0 100 100" style={{transform:'rotate(-90deg)',width:100,height:100}}>
+                  <circle cx="50" cy="50" r="42" fill="none" stroke="#f1f5f9" strokeWidth="10"/>
+                  <circle cx="50" cy="50" r="42" fill="none" stroke={scoreColor} strokeWidth="10"
+                    strokeDasharray={`${2*Math.PI*42*overallScore/100} ${2*Math.PI*42}`} strokeLinecap="round"/>
+                </svg>
+                <div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center'}}>
+                  <span style={{fontSize:26,fontWeight:800,color:'#0f172a',lineHeight:1}}>{overallScore}</span>
+                  <span style={{fontSize:10,color:'#94a3b8'}}>/100</span>
+                </div>
+              </div>
+              <span style={{fontSize:13,fontWeight:700,color:scoreColor}}>{scoreLabel}</span>
+              <p style={{fontSize:10,color:'#94a3b8',margin:0,lineHeight:1.4}}>GSC + GA4 + SEMrush</p>
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:10}}>
+              {pilares.map((p,i)=>{
+                const col=p.score>=80?'#10b981':p.score>=65?'#6366f1':p.score>=50?'#f59e0b':'#ef4444';
+                const bg=p.score>=80?'#ecfdf5':p.score>=65?'#eef2ff':p.score>=50?'#fffbeb':'#fef2f2';
+                const lbl=p.score>=80?'Ótimo':p.score>=65?'Bom':p.score>=50?'Atenção':'Crítico';
+                return (
+                  <div key={i} style={{background:'#fff',borderRadius:12,padding:14,boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+                      <div style={{display:'flex',alignItems:'center',gap:8}}>
+                        <span style={{fontSize:15}}>{p.ic}</span>
+                        <p style={{fontSize:12,fontWeight:700,color:'#1e293b',margin:0}}>{p.area}</p>
+                      </div>
+                      <div style={{display:'flex',alignItems:'center',gap:6}}>
+                        <span style={{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:20,background:bg,color:col}}>{lbl}</span>
+                        <span style={{fontSize:18,fontWeight:800,color:'#1e293b'}}>{p.score}</span>
+                        <span style={{fontSize:10,color:'#94a3b8'}}>/100</span>
+                      </div>
+                    </div>
+                    <div style={{height:5,background:'#f1f5f9',borderRadius:3,overflow:'hidden',marginBottom:6}}>
+                      <div style={{height:'100%',width:p.score+'%',background:col,borderRadius:3}}/>
+                    </div>
+                    <p style={{fontSize:11,color:'#64748b',margin:0}}>{p.desc}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Plano de ação expandível */}
+          <div style={{background:'#fff',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+              <div style={{background:'#fef2f2',borderRadius:8,padding:'6px 8px',fontSize:18}}>⚡</div>
+              <div>
+                <h4 style={{fontSize:14,fontWeight:700,color:'#1e293b',margin:0}}>Plano de Ação Detalhado</h4>
+                <p style={{fontSize:11,color:'#94a3b8',margin:'2px 0 0'}}>Gerado com base nos seus dados reais · clique em qualquer item para ver o passo a passo</p>
+              </div>
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:8}}>
+              {acoes.map((a,i)=>{
+                const open=openAcao===i;
+                return (
+                  <div key={i} style={{border:`1px solid ${open?pBorder(a.prioridade):'#e2e8f0'}`,borderRadius:10,overflow:'hidden'}}>
+                    {/* Header clicável */}
+                    <div onClick={()=>setOpenAcao(open?null:i)}
+                      style={{display:'flex',gap:12,padding:'12px 14px',cursor:'pointer',
+                        background:open?pBg(a.prioridade):'#f8fafc',userSelect:'none'}}>
+                      <div style={{flexShrink:0,width:30,height:30,borderRadius:8,
+                        background:pBg(a.prioridade),border:`1px solid ${pBorder(a.prioridade)}`,
+                        display:'flex',alignItems:'center',justifyContent:'center',
+                        fontWeight:800,fontSize:13,color:pColor(a.prioridade)}}>{i+1}</div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:4,alignItems:'center'}}>
+                          <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,
+                            background:pBg(a.prioridade),color:pColor(a.prioridade),
+                            border:`1px solid ${pBorder(a.prioridade)}`}}>prioridade {a.prioridade}</span>
+                          <span style={{fontSize:10,padding:'2px 8px',borderRadius:20,
+                            background:'#f1f5f9',color:'#64748b'}}>{a.zona}</span>
+                          <span style={{fontSize:10,color:'#94a3b8',marginLeft:'auto',marginRight:6}}>{a.prazo}</span>
+                          <span style={{fontSize:11,color:'#94a3b8',transform:open?'rotate(180deg)':'none',
+                            transition:'transform .2s',display:'inline-block'}}>▼</span>
+                        </div>
+                        <p style={{fontSize:13,fontWeight:600,color:'#1e293b',margin:'0 0 3px',lineHeight:1.4}}>{a.icone} {a.titulo}</p>
+                        <p style={{fontSize:11,color:'#059669',margin:0,fontWeight:500}}>→ {a.potencial}</p>
+                      </div>
+                    </div>
+
+                    {/* Conteúdo expandido */}
+                    {open&&(
+                      <div style={{padding:'16px 16px 16px 56px',background:'#fff',
+                        borderTop:`1px solid ${pBorder(a.prioridade)}`}}>
+                        <div style={{marginBottom:14}}>
+                          <p style={{fontSize:10,fontWeight:700,color:'#94a3b8',textTransform:'uppercase',
+                            letterSpacing:.6,margin:'0 0 6px'}}>Por que isso importa</p>
+                          <p style={{fontSize:12,color:'#374151',margin:0,lineHeight:1.6,
+                            background:'#f8fafc',borderRadius:8,padding:'10px 12px',
+                            borderLeft:`3px solid ${pColor(a.prioridade)}`}}>{a.contexto}</p>
+                        </div>
+                        <div>
+                          <p style={{fontSize:10,fontWeight:700,color:'#94a3b8',textTransform:'uppercase',
+                            letterSpacing:.6,margin:'0 0 10px'}}>Passo a passo</p>
+                          {a.passos.map((passo,j)=>(
+                            <div key={j} style={{display:'flex',gap:10,marginBottom:10,alignItems:'flex-start'}}>
+                              <div style={{flexShrink:0,width:22,height:22,borderRadius:6,
+                                background:pBg(a.prioridade),border:`1px solid ${pBorder(a.prioridade)}`,
+                                display:'flex',alignItems:'center',justifyContent:'center',
+                                fontSize:11,fontWeight:700,color:pColor(a.prioridade),marginTop:1}}>{j+1}</div>
+                              <p style={{fontSize:12,color:'#374151',margin:0,lineHeight:1.55,flex:1}}>{passo}</p>
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{marginTop:12,padding:'10px 14px',
+                          background:pBg(a.prioridade),borderRadius:8,
+                          border:`1px solid ${pBorder(a.prioridade)}`}}>
+                          <p style={{fontSize:12,fontWeight:700,color:pColor(a.prioridade),margin:0}}>
+                            🎯 Resultado esperado: {a.potencial}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Diagnóstico por Página — cruzamento GSC × SEMrush */}
+          {paginasDiagnostico.length>0&&(
+          <div style={{background:'#fff',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+              <div style={{background:'#eef2ff',borderRadius:8,padding:'6px 8px',fontSize:18}}>🔬</div>
+              <div>
+                <h4 style={{fontSize:14,fontWeight:700,color:'#1e293b',margin:0}}>Diagnóstico por Página</h4>
+                <p style={{fontSize:11,color:'#94a3b8',margin:'2px 0 0'}}>Cruzamento GSC + SEMrush · ordenado por oportunidade de crescimento</p>
+              </div>
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:6}}>
+              {paginasDiagnostico.slice(0,8).map((pg,i)=>{
+                const pCol=pg.prioridade==='alta'?'#dc2626':'#d97706';
+                const pBgC=pg.prioridade==='alta'?'#fef2f2':'#fffbeb';
+                const pBrd=pg.prioridade==='alta'?'#fecaca':'#fde68a';
+                const hasGsc=!!pg.gscMatch;
+                return (
+                  <div key={i} style={{padding:'12px 14px',background:'#f8fafc',borderRadius:10,border:'1px solid #e2e8f0'}}>
+                    <div style={{display:'flex',alignItems:'flex-start',gap:12,flexWrap:'wrap'}}>
+                      <div style={{flex:1,minWidth:200}}>
+                        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:5,flexWrap:'wrap'}}>
+                          <span style={{fontSize:12,fontWeight:700,color:'#1e293b',fontFamily:'monospace',
+                            background:'#f1f5f9',padding:'1px 6px',borderRadius:4}}>{pg.slug||'/'}</span>
+                          <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:20,
+                            background:pBgC,color:pCol,border:`1px solid ${pBrd}`}}>prioridade {pg.prioridade}</span>
+                        </div>
+                        <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                          {pg.defender?.length>0&&<span style={{fontSize:11,padding:'2px 8px',borderRadius:20,background:'#ecfdf5',color:'#065f46'}}>🛡 {pg.defender.length} defender</span>}
+                          {pg.atacar?.length>0&&<span style={{fontSize:11,padding:'2px 8px',borderRadius:20,background:'#eef2ff',color:'#4338ca'}}>⚔️ {pg.atacar.length} atacar</span>}
+                          {pg.capturar?.length>0&&<span style={{fontSize:11,padding:'2px 8px',borderRadius:20,background:'#fff7ed',color:'#c2410c'}}>🎯 {pg.capturar.length} capturar</span>}
+                        </div>
+                      </div>
+                      <div style={{display:'flex',gap:16,flexWrap:'wrap',flexShrink:0}}>
+                        {hasGsc&&<div style={{textAlign:'center'}}>
+                          <p style={{fontSize:10,color:'#94a3b8',margin:'0 0 1px'}}>Impressões/mês</p>
+                          <p style={{fontSize:14,fontWeight:700,color:'#1e293b',margin:0}}>{pg.gscMatch.impressoes.toLocaleString('pt-BR')}</p>
+                        </div>}
+                        {hasGsc&&<div style={{textAlign:'center'}}>
+                          <p style={{fontSize:10,color:'#94a3b8',margin:'0 0 1px'}}>CTR</p>
+                          <p style={{fontSize:14,fontWeight:700,color:pg.gscMatch.ctr<2?'#dc2626':pg.gscMatch.ctr<4?'#d97706':'#059669',margin:0}}>{pg.gscMatch.ctr.toFixed(1)}%</p>
+                        </div>}
+                        {hasGsc&&<div style={{textAlign:'center'}}>
+                          <p style={{fontSize:10,color:'#94a3b8',margin:'0 0 1px'}}>Pos. GSC</p>
+                          <p style={{fontSize:14,fontWeight:700,color:'#1e293b',margin:0}}>#{Math.round(pg.gscMatch.posicao)}</p>
+                        </div>}
+                        <div style={{textAlign:'center'}}>
+                          <p style={{fontSize:10,color:'#94a3b8',margin:'0 0 1px'}}>Volume SEMrush</p>
+                          <p style={{fontSize:14,fontWeight:700,color:'#1e293b',margin:0}}>{pg.totalVol.toLocaleString('pt-BR')}</p>
+                        </div>
+                      </div>
+                    </div>
+                    {pg.sinais.length>0&&(
+                      <div style={{marginTop:8,display:'flex',gap:6,flexWrap:'wrap'}}>
+                        {pg.sinais.map((s,j)=>(
+                          <span key={j} style={{fontSize:11,color:'#475569',background:'#fff',
+                            border:'1px solid #e2e8f0',borderRadius:20,padding:'2px 8px'}}>⚡ {s}</span>
+                        ))}
+                      </div>
+                    )}
+                    {pg.acoesPagina.length>0&&(
+                      <div style={{marginTop:8,padding:'6px 10px',background:'rgba(99,102,241,.05)',
+                        borderRadius:8,borderLeft:'3px solid #6366f1'}}>
+                        <p style={{fontSize:11,fontWeight:600,color:'#4338ca',margin:0}}>
+                          → {pg.acoesPagina.includes('otimizar_on_page')&&pg.acoesPagina.includes('melhorar_snippet')?'Otimizar on-page + reescrever snippet (duplo impacto)':
+                             pg.acoesPagina.includes('otimizar_on_page')?`Otimizar on-page: H1, meta e FAQ para "${[...pg.atacar].sort((a,b)=>b.vol-a.vol)[0]?.kw}"`:
+                             pg.acoesPagina.includes('melhorar_snippet')?`Reescrever title tag e meta description — CTR de ${pg.gscMatch?.ctr.toFixed(1)}% está abaixo de 2%`:
+                             'Enriquecer conteúdo para subir zona Capturar → Atacar'}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          )}
+
+          {/* Resumo executivo dinâmico */}
+          <div style={{background:'linear-gradient(135deg,#1e1b4b 0%,#312e81 100%)',borderRadius:12,padding:20}}>
+            <div style={{display:'flex',gap:10,marginBottom:16,alignItems:'center'}}>
+              <span style={{fontSize:22}}>🧠</span>
+              <h4 style={{fontSize:14,fontWeight:700,color:'#fff',margin:0}}>Resumo Executivo — Diagnóstico com Dados Reais</h4>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(250px,1fr))',gap:12}}>
+              {[
+                {t:'Onde estamos bem',ic:'✅',items:ondeEstaBem},
+                {t:'Maior oportunidade',ic:'🎯',items:maioresOps},
+                {t:'Próximo passo crítico',ic:'⚡',items:proximosPassos},
+              ].map((col,i)=>(
+                <div key={i} style={{background:'rgba(255,255,255,.08)',borderRadius:10,padding:14}}>
+                  <p style={{fontSize:12,fontWeight:700,color:'rgba(255,255,255,.6)',margin:'0 0 10px',
+                    display:'flex',gap:6,alignItems:'center'}}>
+                    <span>{col.ic}</span>{col.t}
+                  </p>
+                  {col.items.map((it,j)=>(
+                    <div key={j} style={{display:'flex',gap:8,marginBottom:7}}>
+                      <span style={{color:'rgba(255,255,255,.4)',fontSize:11,marginTop:1,flexShrink:0}}>→</span>
+                      <p style={{fontSize:12,color:'rgba(255,255,255,.85)',margin:0,lineHeight:1.4}}>{it}</p>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+
+        </div>
+      );
+    };
+
+    /* ══════════════════════════════════════════════
+       APP PRINCIPAL
+    ══════════════════════════════════════════════ */
+
+    const ABAS=[{id:'leads',label:'Leads',ic:'👥'},{id:'seo',label:'SEO',ic:'🔍'},{id:'email',label:'E-mail Marketing',ic:'✉️'},{id:'funil',label:'Funil',ic:'📊'},{id:'estrategia',label:'Estratégia & IA',ic:'🤖'}];
+
+    // Período inicial: últimos 30 dias
+    const makeDate=(diasAtras)=>{ const d=new Date(TODAY); d.setDate(d.getDate()-diasAtras); return d; };
+
+    const App=()=>{
+      const [aba,setAba]=useState('leads');
+      const [tipo,setTipo]=useState('all');
+      const [de,setDe]=useState(makeDate(30));
+      const [ate,setAte]=useState(TODAY);
+      const [showCal,setShowCal]=useState(false);
+      const [api,setApi]=useState(null);
+      const [apiStatus,setApiStatus]=useState('carregando');
+      const [diasApi,setDiasApi]=useState(30);
+
+      useEffect(()=>{
+        setApiStatus('carregando');
+        fetch(API_URL+'?dias='+diasApi)
+          .then(r=>r.json())
+          .then(d=>{ setApi(d); setApiStatus('ok'); })
+          .catch(()=>setApiStatus('erro'));
+      },[diasApi]);
+
+      const ATALHOS=[
+        {l:'7 dias', fn:()=>{ setDe(makeDate(7));  setAte(TODAY); setDiasApi(7);  setShowCal(false); }},
+        {l:'30 dias',fn:()=>{ setDe(makeDate(30)); setAte(TODAY); setDiasApi(30); setShowCal(false); }},
+        {l:'90 dias',fn:()=>{ setDe(makeDate(90)); setAte(TODAY); setDiasApi(90); setShowCal(false); }},
+        {l:'Este mês',fn:()=>{ const d=new Date(TODAY); d.setDate(1); setDe(d); setAte(TODAY); setShowCal(false); }},
+        {l:'Ano atual',fn:()=>{ const d=new Date(TODAY); d.setMonth(0,1); setDe(d); setAte(TODAY); setShowCal(false); }},
+      ];
+
+      const TIPOS=[{l:'Todos',v:'all'},{l:'Cliente Final',v:'cliente_final'},{l:'White Label',v:'white_label'}];
+
+      const Pill=({opts,val,set})=>(
+        <div style={{background:'#f1f5f9',borderRadius:8,padding:3,display:'flex',gap:2}}>
+          {opts.map(o=>(
+            <button key={o.v} onClick={()=>set(o.v)}
+              style={{padding:'4px 12px',borderRadius:6,border:'none',cursor:'pointer',fontSize:12,fontWeight:500,background:'none',transition:'all .15s'}}
+              className={val===o.v?'pill-a':'pill-i'}>{o.l}</button>
+          ))}
+        </div>
+      );
+
+      const diasDiff=Math.round((ate-de)/(1000*60*60*24));
+
+      return (
+        <div style={{minHeight:'100vh',background:'#f8fafc'}}>
+
+          {/* Header */}
+          <header style={{background:'#fff',borderBottom:'1px solid #e2e8f0',position:'sticky',top:0,zIndex:50}}>
+            <div style={{maxWidth:1280,margin:'0 auto',padding:'0 24px',display:'flex',alignItems:'center',justifyContent:'space-between',height:64}}>
+              <div style={{display:'flex',alignItems:'center',gap:12}}>
+                <img src="/logos/logo_helena_simbolo_colorido (1).png" style={{height:38,width:'auto'}} alt="Helena"/>
+                <div>
+                  <h1 style={{fontSize:15,fontWeight:800,color:'#0f172a',margin:0,lineHeight:1}}>HelenaCRM - Painel de Marketing</h1>
+                </div>
+              </div>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                {apiStatus==='ok'
+                  ? <span style={{fontSize:11,background:'#f0fdf4',color:'#166534',border:'1px solid #bbf7d0',padding:'5px 10px',borderRadius:7}}>✅ GSC + GA4 conectados</span>
+                  : apiStatus==='carregando'
+                  ? <span style={{fontSize:11,background:'#f1f5f9',color:'#64748b',border:'1px solid #e2e8f0',padding:'5px 10px',borderRadius:7}}>⏳ Conectando APIs…</span>
+                  : <span style={{fontSize:11,background:'#fffbeb',color:'#92400e',border:'1px solid #fde68a',padding:'5px 10px',borderRadius:7}}>⚠ Dados de exemplo</span>
+                }
+                <button onClick={()=>exportarCSV((api?.leads?.recentes||[]).map(l=>({data:l.data,nome:l.nome,canal:l.canal,tipo:l.tipo,status:l.status})),`leads-${toInput(de)}-${toInput(ate)}.csv`)}
+                  style={{background:'#6366f1',color:'#fff',border:'none',borderRadius:8,padding:'7px 14px',fontSize:13,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:6}}>
+                  <IDl/> Exportar CSV
+                </button>
+              </div>
+            </div>
+          </header>
+
+          {/* Filtros */}
+          <div style={{background:'#fff',borderBottom:'1px solid #f1f5f9',position:'sticky',top:64,zIndex:40}}>
+            <div style={{maxWidth:1280,margin:'0 auto',padding:'10px 24px',display:'flex',flexWrap:'wrap',alignItems:'center',gap:10}}>
+
+              {/* Período — calendário livre */}
+              <div style={{position:'relative'}}>
+                <button onClick={()=>setShowCal(!showCal)}
+                  style={{display:'flex',alignItems:'center',gap:7,padding:'6px 12px',borderRadius:8,border:'1px solid #e2e8f0',background:'#fff',fontSize:12,fontWeight:600,color:'#374151',cursor:'pointer',whiteSpace:'nowrap'}}>
+                  <ICal/>
+                  {fmtDate(de)} → {fmtDate(ate)}
+                  <span style={{fontSize:10,background:'#eef2ff',color:'#6366f1',padding:'1px 6px',borderRadius:10,marginLeft:4}}>{diasDiff}d</span>
+                  <span style={{fontSize:10,color:'#94a3b8'}}>▾</span>
+                </button>
+
+                {showCal&&(
+                  <div style={{position:'absolute',top:'calc(100% + 6px)',left:0,background:'#fff',border:'1px solid #e2e8f0',borderRadius:12,padding:16,boxShadow:'0 8px 24px rgba(0,0,0,.12)',zIndex:100,minWidth:320}}>
+                    <p style={{fontSize:11,fontWeight:700,color:'#94a3b8',textTransform:'uppercase',marginBottom:8}}>Atalhos rápidos</p>
+                    <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:14}}>
+                      {ATALHOS.map((a,i)=>(
+                        <button key={i} onClick={a.fn}
+                          style={{padding:'4px 10px',borderRadius:6,border:'1px solid #e2e8f0',background:'#f8fafc',fontSize:12,fontWeight:500,color:'#374151',cursor:'pointer'}}>
+                          {a.l}</button>
+                      ))}
+                    </div>
+                    <p style={{fontSize:11,fontWeight:700,color:'#94a3b8',textTransform:'uppercase',marginBottom:8}}>Período personalizado</p>
+                    <div style={{display:'flex',alignItems:'center',gap:8}}>
+                      <div style={{flex:1}}>
+                        <p style={{fontSize:10,color:'#94a3b8',margin:'0 0 4px',fontWeight:600}}>DE</p>
+                        <input type="date" value={toInput(de)}
+                          max={toInput(ate)}
+                          onChange={e=>{ if(e.target.value) setDe(new Date(e.target.value+'T00:00:00')); }}
+                          style={{width:'100%'}}/>
+                      </div>
+                      <span style={{color:'#94a3b8',marginTop:16}}>→</span>
+                      <div style={{flex:1}}>
+                        <p style={{fontSize:10,color:'#94a3b8',margin:'0 0 4px',fontWeight:600}}>ATÉ</p>
+                        <input type="date" value={toInput(ate)}
+                          min={toInput(de)} max={toInput(TODAY)}
+                          onChange={e=>{ if(e.target.value) setAte(new Date(e.target.value+'T23:59:59')); }}
+                          style={{width:'100%'}}/>
+                      </div>
+                    </div>
+                    <button onClick={()=>setShowCal(false)}
+                      style={{marginTop:12,width:'100%',padding:'7px',background:'#6366f1',color:'#fff',border:'none',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer'}}>
+                      Aplicar período
+                    </button>
+                  </div>
+                )}
+              </div>
+
+
+              <span style={{marginLeft:'auto',fontSize:11,color:'#cbd5e1'}}>
+                Atualizado: {api?.atualizado ? new Date(api.atualizado).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : fmtDate(TODAY)}
+              </span>
+            </div>
+          </div>
+
+          {/* Tabs */}
+          <div style={{maxWidth:1280,margin:'0 auto',padding:'0 24px'}}>
+            <div style={{display:'flex',borderBottom:'1px solid #e2e8f0'}}>
+              {ABAS.map(a=>(
+                <button key={a.id} onClick={()=>setAba(a.id)}
+                  style={{display:'flex',alignItems:'center',gap:7,padding:'14px 16px',fontSize:13,fontWeight:500,border:'none',background:'none',cursor:'pointer',whiteSpace:'nowrap',transition:'all .15s'}}
+                  className={aba===a.id?'tab-a':'tab-i'}>
+                  <span>{a.ic}</span><span>{a.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Content */}
+          <main style={{maxWidth:1280,margin:'0 auto',padding:24}}>
+            {aba==='leads'     && <AbaLeads de={de} ate={ate} tipo={tipo} api={api}/>}
+            {aba==='seo'       && <AbaSEO api={api} diasApi={diasApi}/>}
+            {aba==='email'     && <AbaEmail/>}
+            {aba==='funil'     && <AbaFunil api={api} de={de} ate={ate}/>}
+            {aba==='estrategia'&& <AbaEstrategia api={api} diasApi={diasApi} de={de} ate={ate}/>}
+          </main>
+
+          <footer style={{maxWidth:1280,margin:'0 auto',padding:'20px 24px',borderTop:'1px solid #f1f5f9'}}>
+            <p style={{fontSize:11,color:'#cbd5e1',textAlign:'center',margin:0}}>
+              Painel de Marketing · helena · Conecte suas APIs para dados reais
+            </p>
+          </footer>
+        </div>
+      );
+    };
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  });
+  </script>
+</body>
+</html>
