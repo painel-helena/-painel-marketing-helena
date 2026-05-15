@@ -41,10 +41,11 @@
 <body>
   <div id="root"></div>
   <script>
-  // ── Login simples ──────────────────────────────────
+  // ── Login com hash SHA-256 (senha não fica visível no código) ──
   (function(){
-    const USUARIO = 'growth.helena@helena.app';
-    const SENHA   = 'Growthhelena26.';
+    // Hashes SHA-256 — a senha real nunca aparece aqui
+    const H_USER  = 'f9f3b24d21ce46eede39cf58d4a0e6a2de3cf0cbc355d1fbeb84a398f74cbce6'; // e-mail
+    const H_SENHA = '75e580b820c0170ce2b3bdc4ea722cdf47fd5d884c573847c55012e22a1d2adf'; // senha
     const KEY     = 'painel_auth';
     if (sessionStorage.getItem(KEY) === 'ok') return;
     document.body.style.display='none';
@@ -66,10 +67,16 @@
         <p id="login-erro" style="margin:10px 0 0;font-size:12px;color:#ef4444;display:none">Usuário ou senha incorretos. Tente novamente.</p>
       </div>`;
     document.body.appendChild(overlay);
-    function tentar(){
+    async function sha256(str){
+      const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(str));
+      return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+    }
+    async function tentar(){
       const u=document.getElementById('login-user').value.trim();
       const v=document.getElementById('login-senha').value;
-      if(u===USUARIO && v===SENHA){
+      const hu=await sha256(u);
+      const hv=await sha256(v);
+      if(hu===H_USER && hv===H_SENHA){
         sessionStorage.setItem(KEY,'ok');
         overlay.remove();
         document.body.style.display='';
