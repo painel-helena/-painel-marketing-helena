@@ -297,6 +297,7 @@
     ══════════════════════════════════════════════ */
 
     const API_URL='https://script.google.com/macros/s/AKfycbwBZOxWDRorND_UcRk2xLtFvE4HEV9wiK1z46S3uDyp0GuzJ2Hx4sMLA6DUR29BV60d/exec';
+    const API_TOKEN='Hln@2026#mkt!9x';
 
     /* ══════════════════════════════════════════════
        UTILITÁRIOS
@@ -2758,7 +2759,7 @@
 
       useEffect(()=>{
         setApiStatus('carregando');
-        fetch(API_URL+'?dias='+diasApi)
+        fetch(API_URL+'?dias='+diasApi+'&token='+API_TOKEN)
           .then(r=>r.json())
           .then(d=>{ setApi(d); setApiStatus('ok'); })
           .catch(()=>setApiStatus('erro'));
