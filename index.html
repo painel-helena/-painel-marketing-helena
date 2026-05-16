@@ -245,61 +245,6 @@
     ];
 
     /* ══════════════════════════════════════════════
-       DADOS — ESTRATÉGIA & IA
-    ══════════════════════════════════════════════ */
-
-    const SCORES=[
-      {area:'Leads',  score:72,trend:+12,status:'bom',  desc:'Crescimento sólido, mas conversão de MQL pode melhorar'},
-      {area:'SEO',    score:68,trend:+14,status:'bom',  desc:'Bom tráfego orgânico; CTR e páginas de cauda longa são gaps'},
-      {area:'E-mail', score:81,trend:+3, status:'ótimo',desc:'Taxa de abertura acima da média do mercado (38,7%)'},
-      {area:'Funil',  score:58,trend:+7, status:'atenção',desc:'Conversão Leads → MQL de 36,6% é o maior gargalo'},
-    ];
-
-    const GANHOS_RAPIDOS=[
-      {p:1,impacto:'alto',esforco:'baixo',canal:'SEO',
-       acao:'Otimizar title tag e meta description das 5 páginas com impressões > 2k e CTR < 2%',
-       prazo:'1–2 semanas',potencial:'+25–35% de cliques orgânicos sem novo conteúdo'},
-      {p:2,impacto:'alto',esforco:'baixo',canal:'E-mail',
-       acao:'Separar listas de CF e WL e criar assuntos segmentados para cada campanha ativa',
-       prazo:'Semana 1',potencial:'+18% abertura e +12% CTR em média'},
-      {p:3,impacto:'alto',esforco:'médio',canal:'Funil',
-       acao:'Criar página /white-label/precos com tabela clara, FAQ e CTA forte',
-       prazo:'2–3 semanas',potencial:'+30% conversão de leads WL para reunião'},
-      {p:4,impacto:'médio',esforco:'baixo',canal:'Leads',
-       acao:'Ativar sequência de reengajamento para leads parados há > 30 dias (base estimada: ~200 leads)',
-       prazo:'Semana 2',potencial:'+35–45 leads reativados/mês'},
-      {p:5,impacto:'médio',esforco:'baixo',canal:'SEO',
-       acao:'Adicionar CTAs internos e links para /servicos e /white-label dentro dos 3 posts do blog com mais tráfego',
-       prazo:'Semana 1',potencial:'+15% tráfego para páginas de conversão'},
-    ];
-
-    const MEDIO_PRAZO=[
-      {canal:'E-mail',acao:'Construir fluxo de nutrição exclusivo para White Label (5 e-mails, 21 dias)',impacto:'↑ 35% conversão WL'},
-      {canal:'SEO',acao:'Link building interno: conectar blog → /white-label, /servicos e /contato em posts de alto tráfego',impacto:'↑ rankeamento páginas de serviço'},
-      {canal:'Conteúdo',acao:'Transformar /cases em estudos de caso interativos com números reais de clientes',impacto:'↓ bounce de 74% → <50%'},
-      {canal:'Funil',acao:'Implementar lead scoring automático para priorizar os MQLs de maior potencial de fechamento',impacto:'↑ 20% taxa de fechamento'},
-      {canal:'Ads',acao:'Testar Google Ads para branded keywords e concorrentes diretos (budget protegido)',impacto:'Protege posição + captura demanda ativa'},
-      {canal:'SEO',acao:'Publicar 4 artigos otimizados para palavras-chave com posição 5–10 e volume > 500/mês',impacto:'↑ 15–20% tráfego blog'},
-    ];
-
-    const LONGO_PRAZO=[
-      {canal:'SEO/Conteúdo',acao:'Estratégia pilar-cluster: 3 páginas-pilar + 10 artigos satélite cada (ex: "marketing white label")',impacto:'Autoridade de domínio e tráfego composto'},
-      {canal:'WL',acao:'Programa estruturado de parcerias White Label com portal, materiais e comissionamento',impacto:'Canal de aquisição escalável e recorrente'},
-      {canal:'Funil/Analytics',acao:'Atribuição multi-touch: entender quais canais realmente geram fechamento',impacto:'Redistribuição eficiente de budget'},
-      {canal:'Awareness',acao:'Lançar webinar ou masterclass mensal gratuita para contador/agência parceira',impacto:'Geração de leads quentes + autoridade'},
-      {canal:'Produto',acao:'Co-criar landing pages específicas por nicho (escritório contábil, clínica, e-commerce)',impacto:'↑ conversão orgânica por segmento'},
-    ];
-
-    const ALERTAS=[
-      {nivel:'alto',ic:'🔴',msg:'Funil: apenas 36,6% dos leads viram MQL — abaixo do benchmark de 45% para SaaS/serviços'},
-      {nivel:'alto',ic:'🔴',msg:'Página /cases com 87 sessões e bounce de 74% — prova social não está chegando ao público certo'},
-      {nivel:'médio',ic:'🟡',msg:'Taxa de descadastro de 2,1% na campanha de reengajamento acima do limite aceitável (1,5%)'},
-      {nivel:'médio',ic:'🟡',msg:'CTR médio de 1,4–2,4% nas páginas de oportunidade indica gap técnico em snippets'},
-      {nivel:'info',ic:'🔵',msg:'Mobile representa 34% das sessões mas pode não estar convertendo — verificar formulários e CTAs mobile'},
-      {nivel:'info',ic:'🔵',msg:'Canais Referência (16%) e E-mail (3%) têm potencial inexplorado para parcerias e base atual'},
-    ];
-
-    /* ══════════════════════════════════════════════
        API — Google Apps Script
     ══════════════════════════════════════════════ */
 
@@ -2128,10 +2073,12 @@
       const tOrg=orgRatio>50?25:orgRatio>35?19:orgRatio>20?13:orgRatio>10?8:3;
       const trafegoScore=ga4Ok?Math.min(100,Math.round(tBnc+tSes+tOrg)):0;
 
-      const aKw=smTotal>10000?35:smTotal>5000?28:smTotal>2000?20:smTotal>1000?14:6;
+      // Autoridade NÃO usa smDef para evitar dupla contagem com pilar SEO (sDef).
+      // Usa volume de tráfego SEMrush + diversidade de keywords + keywords em ataque (oportunidade).
+      const aKw=smTotal>10000?40:smTotal>5000?32:smTotal>2000?22:smTotal>1000?14:6;
+      const aTraf=smTraf>20000?30:smTraf>10000?24:smTraf>3000?16:smTraf>500?10:4;
       const aAtk=smAtacar.length>=15?30:smAtacar.length>=8?22:smAtacar.length>=4?15:smAtacar.length>=1?9:3;
-      const aDef=smDef.length>=5?25:smDef.length>=3?18:smDef.length>=1?11:4;
-      const autoridadeScore=smOk?Math.min(100,Math.round(aKw+aAtk+aDef)):0;
+      const autoridadeScore=smOk?Math.min(100,Math.round(aKw+aTraf+aAtk)):0;
 
       const activePilares=[gscOk,ga4Ok,smOk].filter(Boolean).length||1;
       const overallScore=dataOk?Math.round((seoScore+trafegoScore+autoridadeScore)/activePilares):0;
@@ -2155,8 +2102,10 @@
       const wlRate=lTotal>0?(lWl/lTotal*100):0;
       const pagoRate=lTotal>0?(lPago/lTotal*100):0;
       const orgLeadRate=lTotal>0?(lOrg/lTotal*100):0;
-      // Traffic → Lead conversion
-      const trafficLeadRate=ga4Total>0&&lTotal>0?(lTotal/ga4Total*100):0;
+      // Traffic → Lead conversion: SÓ confiável quando período é mensal ou maior (lMes é granular por mês).
+      // Para 7d, ga4Total cobre 7 dias mas lTotal cobre mês inteiro — ratio inflado. Marcamos como inválido.
+      const trafficLeadValido=diasApi>=28;
+      const trafficLeadRate=trafficLeadValido&&ga4Total>0&&lTotal>0?(lTotal/ga4Total*100):0;
       // Top converting channel
       const canalConvMap={};
       lCanalMes.forEach(c=>{
@@ -2167,10 +2116,36 @@
       const canalList=Object.values(canalConvMap).filter(c=>c.count>=3);
       const topConvCanal=[...canalList].sort((a,b)=>((b.mql+b.sql)/b.count)-((a.mql+a.sql)/a.count))[0];
       const topVolCanal=[...canalList].sort((a,b)=>b.count-a.count)[0];
-      const pagoMqlRate=canalList.filter(c=>c.tipoOrigem==='pago').reduce((s,c)=>({mql:s.mql+(c.mql||0),sql:s.sql+(c.sql||0),count:s.count+c.count}),{mql:0,sql:0,count:0});
-      const orgMqlRate=canalList.filter(c=>c.tipoOrigem==='organico').reduce((s,c)=>({mql:s.mql+(c.mql||0),sql:s.sql+(c.sql||0),count:s.count+c.count}),{mql:0,sql:0,count:0});
+      const pagoMqlRate=canalList.filter(c=>c.tipoOrigem==='pago').reduce((s,c)=>({mql:s.mql+(c.mql||0),sql:s.sql+(c.sql||0),count:s.count+c.count,cf:s.cf+(c.cf||0),wl:s.wl+(c.wl||0)}),{mql:0,sql:0,count:0,cf:0,wl:0});
+      const orgMqlRate=canalList.filter(c=>c.tipoOrigem==='organico').reduce((s,c)=>({mql:s.mql+(c.mql||0),sql:s.sql+(c.sql||0),count:s.count+c.count,cf:s.cf+(c.cf||0),wl:s.wl+(c.wl||0)}),{mql:0,sql:0,count:0,cf:0,wl:0});
       const pagoConvPct=pagoMqlRate.count>0?((pagoMqlRate.mql+pagoMqlRate.sql)/pagoMqlRate.count*100):0;
       const orgConvPct=orgMqlRate.count>0?((orgMqlRate.mql+orgMqlRate.sql)/orgMqlRate.count*100):0;
+      // Mix CF×WL por origem — comparar conversão pago/orgânico pode estar enviesado se o mix de tipos for diferente
+      const pagoMixWl=pagoMqlRate.count>0?(pagoMqlRate.wl/pagoMqlRate.count*100):0;
+      const orgMixWl=orgMqlRate.count>0?(orgMqlRate.wl/orgMqlRate.count*100):0;
+      const mixDiverge=Math.abs(pagoMixWl-orgMixWl)>15; // >15pp = comparação enviesada
+
+      // Curva CTR esperada por posição no Google (média do mercado — fonte: Advanced Web Ranking 2024)
+      const ctrPorPos=(pos)=>{
+        if(pos<=1) return 0.305;
+        if(pos<=2) return 0.158;
+        if(pos<=3) return 0.094;
+        if(pos<=4) return 0.062;
+        if(pos<=5) return 0.043;
+        if(pos<=6) return 0.031;
+        if(pos<=7) return 0.024;
+        if(pos<=8) return 0.019;
+        if(pos<=9) return 0.016;
+        if(pos<=10)return 0.013;
+        if(pos<=15)return 0.007;
+        if(pos<=20)return 0.004;
+        return 0.002;
+      };
+      // Ganho estimado ao subir uma keyword de posAtual → posAlvo
+      const ganhoCliques=(vol,posAtual,posAlvo)=>{
+        const delta=ctrPorPos(posAlvo)-ctrPorPos(posAtual);
+        return Math.max(0,Math.round(vol*delta));
+      };
 
       const pilares=[
         {area:'SEO & Conteúdo',score:seoScore,ic:'🔍',
@@ -2187,6 +2162,13 @@
         .sort((a,b)=>b.impressoes-a.impressoes).slice(0,4);
       const topCapt=smCapt.filter(k=>k.volume>500).slice(0,3);
 
+      // === FORECAST DE TRÁFEGO (curva CTR real) ===
+      // Ganho potencial total se subir TODAS as keywords da zona "Atacar" (pos 4-20) para top 3
+      const forecastAtacarTop3=smAtacar.reduce((s,k)=>s+ganhoCliques(k.volume,k.posicao,3),0);
+      // Ganho potencial se elevar páginas com CTR baixo do GSC para CTR de 3.5%
+      const forecastCtr=gscLowCtr.reduce((s,k)=>s+Math.round(k.impressoes*Math.max(0,(0.035-k.ctr/100))),0);
+      const forecastTotal=forecastAtacarTop3+forecastCtr;
+
       // Páginas do SEMrush para ações específicas
       const smPaginas=api?.semrush?.paginas||[];
       const paginasAtacar=smPaginas.filter(p=>p.atacar?.length>0).sort((a,b)=>b.atacar.length-a.atacar.length);
@@ -2194,12 +2176,16 @@
 
       // === DIAGNÓSTICO CRUZADO: GSC × SEMrush por página ===
       const gscPaginas=api?.gsc?.paginas||[];
+      // Normaliza URL: tira protocolo, hostname, query, hash e barra final → slug puro
+      const _normSlug=(u)=>{
+        if(!u) return '';
+        let s=String(u).replace(/^https?:\/\/[^/]+/,'').replace(/[?#].*$/,'').replace(/\/+$/,'');
+        return s||'/';
+      };
       const paginasDiagnostico=smPaginas.map(sp=>{
-        const slug=sp.url.replace(/^https?:\/\/[^/]+/,'').replace(/\/$/,'')||'/';
-        const gscMatch=gscPaginas.find(g=>{
-          const gs=g.url.replace(/^https?:\/\/[^/]+/,'').replace(/\/$/,'')||'/';
-          return gs===slug||g.url===sp.url||g.url.includes(slug)||sp.url.includes(gs);
-        });
+        const slug=_normSlug(sp.url);
+        // Match EXATO de slug normalizado (sem includes — evita /blog casar com /blog/post-x e / casar com tudo)
+        const gscMatch=gscPaginas.find(g=>_normSlug(g.url)===slug);
         const sinais=[];
         const acoesPagina=[];
         if(sp.atacar?.length>0){sinais.push(`${sp.atacar.length} keyword(s) na zona Atacar`);acoesPagina.push('otimizar_on_page');}
@@ -2226,7 +2212,7 @@
         acoes.push({
           prioridade:'alta',zona:'SEO · Página',prazo:i===0?'1-2 semanas':'2-3 semanas',icone:'⚔️',
           titulo:`Otimizar "${slug}" — subir ${p.atacar.length} keyword(s) para o top 3`,
-          contexto:`"${topKw.kw}" está na posição #${topKw.pos} com ${topKw.vol.toLocaleString('pt-BR')} buscas/mês.${outrasKws?' Outras keywords na mesma página: '+outrasKws+'.':''} Otimizando esta página corretamente é possível chegar ao top 3 e capturar ~${Math.round(topKw.vol*0.10).toLocaleString('pt-BR')} cliques/mês só para essa keyword.`,
+          contexto:`"${topKw.kw}" está na posição #${topKw.pos} com ${topKw.vol.toLocaleString('pt-BR')} buscas/mês.${outrasKws?' Outras keywords na mesma página: '+outrasKws+'.':''} Otimizando esta página corretamente é possível chegar ao top 3 e capturar ~${ganhoCliques(topKw.vol,topKw.pos,3).toLocaleString('pt-BR')} cliques/mês a mais só para essa keyword.`,
           passos:[
             `Acesse a página "${slug}" no seu CMS`,
             `Reescreva o H1 incluindo a keyword exata: "${topKw.kw}" — deve aparecer no início do título`,
@@ -2236,7 +2222,7 @@
             `Crie 2-3 links internos de outras páginas do site apontando para esta URL`,
             `Submeta a URL para reindexação: Search Console → URL Inspection → Solicitar indexação`,
           ],
-          potencial:`+${Math.round(p.atacar.reduce((s,k)=>s+k.vol,0)*0.06).toLocaleString('pt-BR')} cliques/mês estimados ao subir para top 3`,
+          potencial:`+${p.atacar.reduce((s,k)=>s+ganhoCliques(k.vol,k.pos,3),0).toLocaleString('pt-BR')} cliques/mês estimados ao subir para top 3`,
         });
       });
 
@@ -2254,7 +2240,7 @@
             `Não altere a URL (mudança de URL derruba o ranqueamento)`,
             `Monitore o CTR no Search Console após 7-14 dias para confirmar melhora`,
           ],
-          potencial:`+${Math.round(k.impressoes*0.025).toLocaleString('pt-BR')} cliques/mês sem criar nenhum conteúdo novo`,
+          potencial:`+${Math.round(k.impressoes*Math.max(0,(0.035-k.ctr/100))).toLocaleString('pt-BR')} cliques/mês ao elevar CTR para ~3,5% (sem criar conteúdo novo)`,
         });
       }
 
@@ -2270,7 +2256,7 @@
             `Para cada página: teste variações de título com pergunta ("Como…?"), número ("5 formas de…") ou promessa direta ("Veja como…")`,
             `Monitore o CTR semanalmente no Search Console`,
           ]),
-          potencial:`+${Math.round(extras.reduce((s,k)=>s+k.impressoes,0)*0.02).toLocaleString('pt-BR')} cliques adicionais/mês`,
+          potencial:`+${extras.reduce((s,k)=>s+Math.round(k.impressoes*Math.max(0,(0.035-k.ctr/100))),0).toLocaleString('pt-BR')} cliques adicionais/mês ao elevar CTR médio para ~3,5%`,
         });
       }
 
@@ -2461,11 +2447,17 @@
                 <p style={{fontSize:11,color:'#94a3b8',margin:'2px 0 0'}}>Funil completo — como o tráfego se converte em leads qualificados</p>
               </div>
             </div>
+            {!trafficLeadValido&&(
+              <div style={{background:'#fffbeb',border:'1px solid #fbbf24',borderRadius:8,padding:'8px 12px',marginBottom:12,display:'flex',gap:8,alignItems:'center'}}>
+                <span style={{fontSize:13}}>ℹ️</span>
+                <p style={{fontSize:11,color:'#92400e',margin:0,lineHeight:1.4,fontWeight:500}}>Leads são agregados por mês — para conversão precisa, selecione período de 30 dias ou mais. No filtro atual ({diasApi}d) a taxa de conversão tráfego→lead foi omitida.</p>
+              </div>
+            )}
             {/* Funil visual */}
             <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:16,flexWrap:'wrap'}}>
               {[
                 {label:'Sessões GA4',val:ga4Total,color:'#6366f1',pct:null},
-                {label:'Leads',val:lTotal,color:'#0891b2',pct:trafficLeadRate>0?`${trafficLeadRate.toFixed(2)}% conv.`:null},
+                {label:'Leads',val:lTotal,color:'#0891b2',pct:trafficLeadValido&&trafficLeadRate>0?`${trafficLeadRate.toFixed(2)}% conv.`:null},
                 {label:'MQL + SQL',val:lMql+lSql,color:mqlRate>=15?'#059669':'#d97706',pct:mqlRate>0?`${mqlRate.toFixed(1)}% dos leads`:null},
               ].map((f,i,arr)=>(
                 <React.Fragment key={i}>
@@ -2483,7 +2475,7 @@
               {[
                 pagoConvPct>0&&orgConvPct>0&&{
                   ic:pagoConvPct>orgConvPct?'📣':'🌱',
-                  txt:`Leads ${pagoConvPct>orgConvPct?'pagos':'orgânicos'} convertem ${Math.abs(pagoConvPct-orgConvPct).toFixed(1)}pp ${pagoConvPct>orgConvPct?'mais':'menos'} — pago ${pagoConvPct.toFixed(1)}% MQL vs orgânico ${orgConvPct.toFixed(1)}%`,
+                  txt:`Leads ${pagoConvPct>orgConvPct?'pagos':'orgânicos'} convertem ${Math.abs(pagoConvPct-orgConvPct).toFixed(1)}pp ${pagoConvPct>orgConvPct?'mais':'menos'} — pago ${pagoConvPct.toFixed(1)}% MQL vs orgânico ${orgConvPct.toFixed(1)}%${mixDiverge?` (atenção: mix WL difere ${Math.abs(pagoMixWl-orgMixWl).toFixed(0)}pp entre os dois — comparação pode estar enviesada)`:''}`,
                   color:pagoConvPct>orgConvPct?'#dc2626':'#059669',bg:pagoConvPct>orgConvPct?'#fef2f2':'#f0fdf4',
                 },
                 topConvCanal&&{
@@ -2558,6 +2550,37 @@
               })}
             </div>
           </div>
+
+          {/* Forecast de tráfego incremental — projeção baseada em curva CTR real */}
+          {smOk&&forecastTotal>0&&(
+            <div style={{background:'linear-gradient(135deg,#065f46 0%,#047857 100%)',borderRadius:12,padding:20,color:'#fff'}}>
+              <div style={{display:'flex',gap:10,alignItems:'center',marginBottom:14}}>
+                <span style={{fontSize:22}}>📈</span>
+                <div>
+                  <h4 style={{fontSize:14,fontWeight:700,margin:0}}>Forecast de Tráfego Orgânico Incremental</h4>
+                  <p style={{fontSize:11,opacity:.8,margin:'2px 0 0'}}>Projeção mensal baseada em curva real de CTR por posição (Advanced Web Ranking 2024)</p>
+                </div>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:12}}>
+                <div style={{background:'rgba(255,255,255,.1)',borderRadius:10,padding:14}}>
+                  <p style={{fontSize:11,opacity:.75,margin:'0 0 4px',fontWeight:600}}>SUBIR KEYWORDS PARA TOP 3</p>
+                  <p style={{fontSize:24,fontWeight:800,margin:'0 0 2px'}}>+{forecastAtacarTop3.toLocaleString('pt-BR')}</p>
+                  <p style={{fontSize:11,opacity:.7,margin:0}}>cliques/mês ({smAtacar.length} keywords pos 4-20 → top 3)</p>
+                </div>
+                <div style={{background:'rgba(255,255,255,.1)',borderRadius:10,padding:14}}>
+                  <p style={{fontSize:11,opacity:.75,margin:'0 0 4px',fontWeight:600}}>OTIMIZAR CTR EM PÁGINAS-CHAVE</p>
+                  <p style={{fontSize:24,fontWeight:800,margin:'0 0 2px'}}>+{forecastCtr.toLocaleString('pt-BR')}</p>
+                  <p style={{fontSize:11,opacity:.7,margin:0}}>cliques/mês ({gscLowCtr.length} páginas com CTR &lt; 2%)</p>
+                </div>
+                <div style={{background:'rgba(255,255,255,.18)',borderRadius:10,padding:14,border:'1px solid rgba(255,255,255,.3)'}}>
+                  <p style={{fontSize:11,opacity:.85,margin:'0 0 4px',fontWeight:700}}>POTENCIAL TOTAL</p>
+                  <p style={{fontSize:28,fontWeight:800,margin:'0 0 2px'}}>+{forecastTotal.toLocaleString('pt-BR')}</p>
+                  <p style={{fontSize:11,opacity:.8,margin:0}}>cliques/mês = {gscOk&&gscCli>0?`+${Math.round(forecastTotal/gscCli*100)}% sobre tráfego atual`:'sem novo conteúdo'}</p>
+                </div>
+              </div>
+              <p style={{fontSize:10,opacity:.65,margin:'12px 0 0',fontStyle:'italic'}}>Estimativa conservadora: CTR top 1 = 30,5% · top 3 = 9,4% · pos 10 = 1,3%. Resultado real depende de qualidade da otimização e competição.</p>
+            </div>
+          )}
 
           {/* Plano de ação expandível */}
           <div style={{background:'#fff',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
@@ -2712,6 +2735,53 @@
             </div>
           </div>
           )}
+
+          {/* ── Anomaly Detection — quedas/altas significativas no histórico GSC ── */}
+          {(()=>{
+            const hist=api?.gsc?.historico||[];
+            if(hist.length<14) return null;
+            const ord=[...hist].sort((a,b)=>a.data<b.data?-1:1);
+            const ult7=ord.slice(-7);
+            const ant7=ord.slice(-14,-7);
+            const sum=(arr,k)=>arr.reduce((s,r)=>s+(r[k]||0),0);
+            const cliUlt=sum(ult7,'cliques'),  cliAnt=sum(ant7,'cliques');
+            const impUlt=sum(ult7,'impressoes'),impAnt=sum(ant7,'impressoes');
+            const posUlt=ult7.length?sum(ult7,'posicao')/ult7.length:0;
+            const posAnt=ant7.length?sum(ant7,'posicao')/ant7.length:0;
+            const pct=(a,b)=>b>0?((a-b)/b*100):0;
+            const dCli=pct(cliUlt,cliAnt),dImp=pct(impUlt,impAnt);
+            const dPos=posUlt-posAnt; // positivo = piorou (posição é "menor é melhor")
+            const sinais=[];
+            if(dCli<=-15) sinais.push({nivel:'alto',ic:'🔴',msg:`Cliques caíram ${Math.abs(dCli).toFixed(0)}% nos últimos 7d (${cliAnt.toLocaleString('pt-BR')} → ${cliUlt.toLocaleString('pt-BR')}). Investigue alterações de conteúdo, perda de posição ou sazonalidade.`});
+            else if(dCli>=20) sinais.push({nivel:'bom',ic:'🟢',msg:`Cliques cresceram ${dCli.toFixed(0)}% nos últimos 7d (${cliAnt.toLocaleString('pt-BR')} → ${cliUlt.toLocaleString('pt-BR')}). Replique o que funcionou em outros conteúdos.`});
+            if(dImp<=-15) sinais.push({nivel:'medio',ic:'🟡',msg:`Impressões caíram ${Math.abs(dImp).toFixed(0)}% — pode ser perda de keywords ou queda de demanda. Verifique GSC > Performance > comparar últimos 7d.`});
+            if(dPos>=1.5) sinais.push({nivel:'alto',ic:'🔴',msg:`Posição média piorou ${dPos.toFixed(1)} posições (de ${posAnt.toFixed(1)} para ${posUlt.toFixed(1)}). Verifique se há páginas perdendo ranking ou Core Update do Google recente.`});
+            else if(dPos<=-1.5) sinais.push({nivel:'bom',ic:'🟢',msg:`Posição média melhorou ${Math.abs(dPos).toFixed(1)} posições (${posAnt.toFixed(1)} → ${posUlt.toFixed(1)}).`});
+            if(sinais.length===0) sinais.push({nivel:'info',ic:'⚪',msg:`Sem variações relevantes nos últimos 7d vs anteriores. Cliques ${dCli>=0?'+':''}${dCli.toFixed(1)}% · Impressões ${dImp>=0?'+':''}${dImp.toFixed(1)}% · Posição ${dPos>=0?'+':''}${dPos.toFixed(2)}.`});
+            const corNivel={alto:{bg:'#fef2f2',br:'#fecaca',cor:'#991b1b'},medio:{bg:'#fffbeb',br:'#fde68a',cor:'#92400e'},bom:{bg:'#f0fdf4',br:'#bbf7d0',cor:'#166534'},info:{bg:'#f8fafc',br:'#e2e8f0',cor:'#475569'}};
+            return (
+              <div style={{background:'#fff',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
+                <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
+                  <div style={{background:'#fef2f2',borderRadius:8,padding:'6px 8px',fontSize:18}}>📡</div>
+                  <div>
+                    <h4 style={{fontSize:14,fontWeight:700,color:'#1e293b',margin:0}}>Alertas — Últimos 7 dias vs 7 dias anteriores</h4>
+                    <p style={{fontSize:11,color:'#94a3b8',margin:'2px 0 0'}}>Detecção de variações relevantes no Search Console</p>
+                  </div>
+                </div>
+                <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                  {sinais.map((s,i)=>{
+                    const c=corNivel[s.nivel];
+                    return (
+                      <div key={i} style={{background:c.bg,border:`1px solid ${c.br}`,borderRadius:10,padding:'10px 14px',display:'flex',gap:10,alignItems:'flex-start'}}>
+                        <span style={{fontSize:14,flexShrink:0,marginTop:1}}>{s.ic}</span>
+                        <p style={{fontSize:12,color:c.cor,fontWeight:500,margin:0,lineHeight:1.45}}>{s.msg}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Resumo executivo dinâmico */}
           <div style={{background:'linear-gradient(135deg,#1e1b4b 0%,#312e81 100%)',borderRadius:12,padding:20}}>
