@@ -2182,24 +2182,72 @@
         let s=String(u).replace(/^https?:\/\/[^/]+/,'').replace(/[?#].*$/,'').replace(/\/+$/,'');
         return s||'/';
       };
-      const paginasDiagnostico=smPaginas.map(sp=>{
+      // === Deduplica por slug — mesma página com várias URLs do SEMrush vira uma só ===
+      const _pagMap={};
+      smPaginas.forEach(sp=>{
         const slug=_normSlug(sp.url);
-        // Match EXATO de slug normalizado (sem includes — evita /blog casar com /blog/post-x e / casar com tudo)
+        if(!_pagMap[slug]) _pagMap[slug]={url:sp.url,slug,atacar:[],capturar:[],defender:[],totalKws:0,totalVol:0};
+        const acc=_pagMap[slug];
+        (sp.atacar||[]).forEach(k=>acc.atacar.push(k));
+        (sp.capturar||[]).forEach(k=>acc.capturar.push(k));
+        (sp.defender||[]).forEach(k=>acc.defender.push(k));
+        acc.totalKws+=(sp.totalKws||0);
+        acc.totalVol+=(sp.totalVol||0);
+      });
+      // Dedup interno de keywords (mesma kw em zonas duplicadas — mantém melhor posição)
+      Object.values(_pagMap).forEach(p=>{
+        const dedup=(arr)=>{const m={};arr.forEach(k=>{if(!m[k.kw]||(k.pos||999)<(m[k.kw].pos||999))m[k.kw]=k;});return Object.values(m);};
+        p.atacar=dedup(p.atacar);
+        p.capturar=dedup(p.capturar);
+        p.defender=dedup(p.defender);
+      });
+      const smPaginasUnicas=Object.values(_pagMap);
+
+      const paginasDiagnostico=smPaginasUnicas.map(sp=>{
+        const slug=sp.slug;
         const gscMatch=gscPaginas.find(g=>_normSlug(g.url)===slug);
+        // Top keyword (maior volume) entre as oportunidades reais (Atacar > Capturar)
+        const topKwAtacar=sp.atacar.length?[...sp.atacar].sort((a,b)=>b.vol-a.vol)[0]:null;
+        const topKwCapt=sp.capturar.length?[...sp.capturar].sort((a,b)=>b.vol-a.vol)[0]:null;
+        const topKw=topKwAtacar||topKwCapt;
+        // Ganho potencial estimado (curva CTR real) ao subir topKw para top 3
+        const ganhoTop3=topKwAtacar?ganhoCliques(topKwAtacar.vol,topKwAtacar.pos,3):0;
+
         const sinais=[];
         const acoesPagina=[];
-        if(sp.atacar?.length>0){sinais.push(`${sp.atacar.length} keyword(s) na zona Atacar`);acoesPagina.push('otimizar_on_page');}
-        if(sp.capturar?.length>0){sinais.push(`${sp.capturar.length} keyword(s) na zona Capturar`);acoesPagina.push('enriquecer_conteudo');}
-        if(sp.defender?.length>0) sinais.push(`${sp.defender.length} keyword(s) no top 3 (defender)`);
+        if(sp.atacar.length>0){sinais.push(`${sp.atacar.length} keyword(s) prontas pra subir (pos 4-20)`);acoesPagina.push('otimizar_on_page');}
+        if(sp.capturar.length>0){sinais.push(`${sp.capturar.length} keyword(s) precisam de mais conteúdo (pos 21+)`);acoesPagina.push('enriquecer_conteudo');}
+        if(sp.defender.length>0) sinais.push(`${sp.defender.length} keyword(s) já no top 3 — manter`);
         if(gscMatch){
-          if(gscMatch.ctr<2&&gscMatch.impressoes>300){sinais.push(`CTR de ${gscMatch.ctr.toFixed(1)}% no GSC`);acoesPagina.push('melhorar_snippet');}
-          if(gscMatch.posicao>10&&gscMatch.impressoes>500) sinais.push(`pos #${Math.round(gscMatch.posicao)} no GSC com ${gscMatch.impressoes.toLocaleString('pt-BR')} impressões`);
+          if(gscMatch.ctr<2&&gscMatch.impressoes>300){sinais.push(`CTR baixo: ${gscMatch.ctr.toFixed(1)}% (esperado: >3%)`);acoesPagina.push('melhorar_snippet');}
+          if(gscMatch.posicao>=8&&gscMatch.posicao<=12&&gscMatch.impressoes>500){sinais.push(`Pos #${Math.round(gscMatch.posicao)} — beirando o top 10`);acoesPagina.push('empurrar_top10');}
         }
-        const prioridade=acoesPagina.includes('otimizar_on_page')&&acoesPagina.includes('melhorar_snippet')?'alta':
+
+        // Recomendação clara e específica
+        let recAcao='';
+        let recDetalhe='';
+        if(acoesPagina.includes('otimizar_on_page')&&topKwAtacar){
+          recAcao=`Otimizar para "${topKwAtacar.kw}"`;
+          recDetalhe=`Pos #${topKwAtacar.pos} · ${topKwAtacar.vol.toLocaleString('pt-BR')} buscas/mês · ganho estimado: +${ganhoTop3.toLocaleString('pt-BR')} cliques/mês no top 3`;
+        } else if(acoesPagina.includes('melhorar_snippet')&&gscMatch){
+          recAcao=`Reescrever title + meta description`;
+          recDetalhe=`CTR ${gscMatch.ctr.toFixed(1)}% com ${gscMatch.impressoes.toLocaleString('pt-BR')} impressões — ganho ao elevar p/ 3,5%: +${Math.round(gscMatch.impressoes*(0.035-gscMatch.ctr/100)).toLocaleString('pt-BR')} cliques/mês`;
+        } else if(acoesPagina.includes('enriquecer_conteudo')&&topKwCapt){
+          recAcao=`Criar/expandir conteúdo para "${topKwCapt.kw}"`;
+          recDetalhe=`Pos #${topKwCapt.pos} · ${topKwCapt.vol.toLocaleString('pt-BR')} buscas/mês — ainda muito longe do top 10, precisa de mais conteúdo`;
+        } else if(sp.defender.length>0){
+          recAcao=`Manter posição — monitorar mensalmente`;
+          recDetalhe=`${sp.defender.length} keyword(s) no top 3. Atualizar conteúdo a cada 3 meses para defender ranking`;
+        }
+
+        const prioridade=
+          (acoesPagina.includes('otimizar_on_page')&&acoesPagina.includes('melhorar_snippet'))?'alta':
           acoesPagina.includes('otimizar_on_page')?'alta':
-          acoesPagina.includes('melhorar_snippet')?'alta':'média';
-        return {...sp,slug,gscMatch,sinais,acoesPagina,prioridade,
-          scoreOportunidade:(sp.atacar?.length||0)*3+(sp.capturar?.length||0)*1+(gscMatch?.impressoes||0)/1000};
+          acoesPagina.includes('melhorar_snippet')?'alta':
+          acoesPagina.includes('empurrar_top10')?'alta':'média';
+
+        return {...sp,slug,gscMatch,sinais,acoesPagina,prioridade,topKw,topKwAtacar,topKwCapt,ganhoTop3,recAcao,recDetalhe,
+          scoreOportunidade:(sp.atacar.length)*3+(sp.capturar.length)*1+(gscMatch?.impressoes||0)/1000+ganhoTop3*0.5};
       }).filter(p=>p.sinais.length>0).sort((a,b)=>b.scoreOportunidade-a.scoreOportunidade);
 
       // === PLANO DE AÇÃO COM PASSO A PASSO ===
@@ -2662,72 +2710,78 @@
           {/* Diagnóstico por Página — cruzamento GSC × SEMrush */}
           {paginasDiagnostico.length>0&&(
           <div style={{background:'#fff',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
-            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:8}}>
               <div style={{background:'#eef2ff',borderRadius:8,padding:'6px 8px',fontSize:18}}>🔬</div>
               <div>
                 <h4 style={{fontSize:14,fontWeight:700,color:'#1e293b',margin:0}}>Diagnóstico por Página</h4>
-                <p style={{fontSize:11,color:'#94a3b8',margin:'2px 0 0'}}>Cruzamento GSC + SEMrush · ordenado por oportunidade de crescimento</p>
+                <p style={{fontSize:11,color:'#94a3b8',margin:'2px 0 0'}}>O que está acontecendo em cada página e o que fazer · ordenado por maior oportunidade de tráfego</p>
               </div>
             </div>
-            <div style={{display:'flex',flexDirection:'column',gap:6}}>
-              {paginasDiagnostico.slice(0,8).map((pg,i)=>{
+            {/* Legenda */}
+            <div style={{background:'#f8fafc',borderRadius:8,padding:'8px 12px',marginBottom:12,fontSize:11,color:'#64748b',lineHeight:1.5}}>
+              🛡 <strong style={{color:'#065f46'}}>Defender</strong> = já está no top 3 (manter) ·
+              ⚔️ <strong style={{color:'#4338ca'}}>Atacar</strong> = pos 4-20 (otimizar p/ subir) ·
+              🎯 <strong style={{color:'#c2410c'}}>Capturar</strong> = pos 21+ (precisa mais conteúdo)
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:8}}>
+              {paginasDiagnostico.slice(0,10).map((pg,i)=>{
                 const pCol=pg.prioridade==='alta'?'#dc2626':'#d97706';
                 const pBgC=pg.prioridade==='alta'?'#fef2f2':'#fffbeb';
                 const pBrd=pg.prioridade==='alta'?'#fecaca':'#fde68a';
                 const hasGsc=!!pg.gscMatch;
                 return (
-                  <div key={i} style={{padding:'12px 14px',background:'#f8fafc',borderRadius:10,border:'1px solid #e2e8f0'}}>
-                    <div style={{display:'flex',alignItems:'flex-start',gap:12,flexWrap:'wrap'}}>
-                      <div style={{flex:1,minWidth:200}}>
-                        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:5,flexWrap:'wrap'}}>
-                          <span style={{fontSize:12,fontWeight:700,color:'#1e293b',fontFamily:'monospace',
-                            background:'#f1f5f9',padding:'1px 6px',borderRadius:4}}>{pg.slug||'/'}</span>
-                          <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:20,
-                            background:pBgC,color:pCol,border:`1px solid ${pBrd}`}}>prioridade {pg.prioridade}</span>
-                        </div>
-                        <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                          {pg.defender?.length>0&&<span style={{fontSize:11,padding:'2px 8px',borderRadius:20,background:'#ecfdf5',color:'#065f46'}}>🛡 {pg.defender.length} defender</span>}
-                          {pg.atacar?.length>0&&<span style={{fontSize:11,padding:'2px 8px',borderRadius:20,background:'#eef2ff',color:'#4338ca'}}>⚔️ {pg.atacar.length} atacar</span>}
-                          {pg.capturar?.length>0&&<span style={{fontSize:11,padding:'2px 8px',borderRadius:20,background:'#fff7ed',color:'#c2410c'}}>🎯 {pg.capturar.length} capturar</span>}
-                        </div>
-                      </div>
-                      <div style={{display:'flex',gap:16,flexWrap:'wrap',flexShrink:0}}>
-                        {hasGsc&&<div style={{textAlign:'center'}}>
-                          <p style={{fontSize:10,color:'#94a3b8',margin:'0 0 1px'}}>Impressões/mês</p>
-                          <p style={{fontSize:14,fontWeight:700,color:'#1e293b',margin:0}}>{pg.gscMatch.impressoes.toLocaleString('pt-BR')}</p>
-                        </div>}
-                        {hasGsc&&<div style={{textAlign:'center'}}>
-                          <p style={{fontSize:10,color:'#94a3b8',margin:'0 0 1px'}}>CTR</p>
-                          <p style={{fontSize:14,fontWeight:700,color:pg.gscMatch.ctr<2?'#dc2626':pg.gscMatch.ctr<4?'#d97706':'#059669',margin:0}}>{pg.gscMatch.ctr.toFixed(1)}%</p>
-                        </div>}
-                        {hasGsc&&<div style={{textAlign:'center'}}>
-                          <p style={{fontSize:10,color:'#94a3b8',margin:'0 0 1px'}}>Pos. GSC</p>
-                          <p style={{fontSize:14,fontWeight:700,color:'#1e293b',margin:0}}>#{Math.round(pg.gscMatch.posicao)}</p>
-                        </div>}
-                        <div style={{textAlign:'center'}}>
-                          <p style={{fontSize:10,color:'#94a3b8',margin:'0 0 1px'}}>Volume SEMrush</p>
-                          <p style={{fontSize:14,fontWeight:700,color:'#1e293b',margin:0}}>{pg.totalVol.toLocaleString('pt-BR')}</p>
-                        </div>
-                      </div>
+                  <div key={i} style={{padding:'14px 16px',background:'#fff',borderRadius:10,border:`1px solid ${pBrd}`,borderLeft:`4px solid ${pCol}`}}>
+                    {/* Linha 1: slug + prioridade + métricas */}
+                    <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',marginBottom:10}}>
+                      <span style={{fontSize:13,fontWeight:700,color:'#1e293b',fontFamily:'monospace',
+                        background:'#f1f5f9',padding:'3px 8px',borderRadius:5}}>{pg.slug||'/'}</span>
+                      <span style={{fontSize:10,fontWeight:700,padding:'3px 8px',borderRadius:20,
+                        background:pBgC,color:pCol,textTransform:'uppercase',letterSpacing:'.04em'}}>prioridade {pg.prioridade}</span>
+                      <div style={{flex:1}}/>
+                      {hasGsc&&<span style={{fontSize:11,color:'#64748b'}}>👁 <strong>{pg.gscMatch.impressoes.toLocaleString('pt-BR')}</strong> impr/mês</span>}
+                      {hasGsc&&<span style={{fontSize:11,color:pg.gscMatch.ctr<2?'#dc2626':pg.gscMatch.ctr<4?'#d97706':'#059669'}}>🖱 <strong>{pg.gscMatch.ctr.toFixed(1)}%</strong> CTR</span>}
+                      {hasGsc&&<span style={{fontSize:11,color:'#64748b'}}>📍 pos <strong>#{Math.round(pg.gscMatch.posicao)}</strong></span>}
+                      <span style={{fontSize:11,color:'#64748b'}}>🔎 <strong>{pg.totalVol.toLocaleString('pt-BR')}</strong> buscas/mês</span>
                     </div>
-                    {pg.sinais.length>0&&(
-                      <div style={{marginTop:8,display:'flex',gap:6,flexWrap:'wrap'}}>
-                        {pg.sinais.map((s,j)=>(
-                          <span key={j} style={{fontSize:11,color:'#475569',background:'#fff',
-                            border:'1px solid #e2e8f0',borderRadius:20,padding:'2px 8px'}}>⚡ {s}</span>
-                        ))}
+
+                    {/* Linha 2: zonas de keywords */}
+                    <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:10}}>
+                      {pg.defender.length>0&&<span style={{fontSize:11,padding:'3px 9px',borderRadius:20,background:'#ecfdf5',color:'#065f46',fontWeight:600}}>🛡 {pg.defender.length} defender</span>}
+                      {pg.atacar.length>0&&<span style={{fontSize:11,padding:'3px 9px',borderRadius:20,background:'#eef2ff',color:'#4338ca',fontWeight:600}}>⚔️ {pg.atacar.length} atacar</span>}
+                      {pg.capturar.length>0&&<span style={{fontSize:11,padding:'3px 9px',borderRadius:20,background:'#fff7ed',color:'#c2410c',fontWeight:600}}>🎯 {pg.capturar.length} capturar</span>}
+                    </div>
+
+                    {/* Linha 3: ação clara — O QUE FAZER */}
+                    {pg.recAcao&&(
+                      <div style={{background:'linear-gradient(90deg,#eef2ff 0%,#f5f3ff 100%)',
+                        borderRadius:8,padding:'10px 14px',borderLeft:'3px solid #6366f1'}}>
+                        <div style={{display:'flex',gap:8,alignItems:'flex-start'}}>
+                          <span style={{fontSize:14,marginTop:1}}>🎯</span>
+                          <div style={{flex:1}}>
+                            <p style={{fontSize:12,fontWeight:700,color:'#4338ca',margin:'0 0 3px'}}>{pg.recAcao}</p>
+                            <p style={{fontSize:11,color:'#64748b',margin:0,lineHeight:1.45}}>{pg.recDetalhe}</p>
+                          </div>
+                        </div>
                       </div>
                     )}
-                    {pg.acoesPagina.length>0&&(
-                      <div style={{marginTop:8,padding:'6px 10px',background:'rgba(99,102,241,.05)',
-                        borderRadius:8,borderLeft:'3px solid #6366f1'}}>
-                        <p style={{fontSize:11,fontWeight:600,color:'#4338ca',margin:0}}>
-                          → {pg.acoesPagina.includes('otimizar_on_page')&&pg.acoesPagina.includes('melhorar_snippet')?'Otimizar on-page + reescrever snippet (duplo impacto)':
-                             pg.acoesPagina.includes('otimizar_on_page')?`Otimizar on-page: H1, meta e FAQ para "${[...pg.atacar].sort((a,b)=>b.vol-a.vol)[0]?.kw}"`:
-                             pg.acoesPagina.includes('melhorar_snippet')?`Reescrever title tag e meta description — CTR de ${pg.gscMatch?.ctr.toFixed(1)}% está abaixo de 2%`:
-                             'Enriquecer conteúdo para subir zona Capturar → Atacar'}
-                        </p>
-                      </div>
+
+                    {/* Linha 4: top 3 keywords da página (Atacar prioritárias) */}
+                    {pg.atacar.length>0&&(
+                      <details style={{marginTop:8}}>
+                        <summary style={{fontSize:11,color:'#64748b',cursor:'pointer',fontWeight:600,padding:'4px 0'}}>
+                          Ver top keywords desta página ({Math.min(pg.atacar.length,5)} de {pg.atacar.length})
+                        </summary>
+                        <div style={{marginTop:6,display:'flex',flexDirection:'column',gap:4}}>
+                          {[...pg.atacar].sort((a,b)=>b.vol-a.vol).slice(0,5).map((k,j)=>(
+                            <div key={j} style={{display:'flex',alignItems:'center',gap:8,fontSize:11,padding:'4px 8px',background:'#f8fafc',borderRadius:6}}>
+                              <span style={{fontWeight:600,color:'#1e293b',flex:1}}>"{k.kw}"</span>
+                              <span style={{color:'#64748b'}}>pos #{k.pos}</span>
+                              <span style={{color:'#64748b'}}>{k.vol.toLocaleString('pt-BR')} buscas</span>
+                              <span style={{color:'#059669',fontWeight:600}}>+{ganhoCliques(k.vol,k.pos,3).toLocaleString('pt-BR')} cliques/mês se top 3</span>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
                     )}
                   </div>
                 );
@@ -2736,7 +2790,7 @@
           </div>
           )}
 
-          {/* ── Anomaly Detection — quedas/altas significativas no histórico GSC ── */}
+          {/* ── Monitor de Performance — variações 7d vs 7d ── */}
           {(()=>{
             const hist=api?.gsc?.historico||[];
             if(hist.length<14) return null;
@@ -2750,31 +2804,67 @@
             const posAnt=ant7.length?sum(ant7,'posicao')/ant7.length:0;
             const pct=(a,b)=>b>0?((a-b)/b*100):0;
             const dCli=pct(cliUlt,cliAnt),dImp=pct(impUlt,impAnt);
-            const dPos=posUlt-posAnt; // positivo = piorou (posição é "menor é melhor")
+            const dPos=posUlt-posAnt; // positivo = piorou (pos. menor é melhor)
             const sinais=[];
-            if(dCli<=-15) sinais.push({nivel:'alto',ic:'🔴',msg:`Cliques caíram ${Math.abs(dCli).toFixed(0)}% nos últimos 7d (${cliAnt.toLocaleString('pt-BR')} → ${cliUlt.toLocaleString('pt-BR')}). Investigue alterações de conteúdo, perda de posição ou sazonalidade.`});
-            else if(dCli>=20) sinais.push({nivel:'bom',ic:'🟢',msg:`Cliques cresceram ${dCli.toFixed(0)}% nos últimos 7d (${cliAnt.toLocaleString('pt-BR')} → ${cliUlt.toLocaleString('pt-BR')}). Replique o que funcionou em outros conteúdos.`});
-            if(dImp<=-15) sinais.push({nivel:'medio',ic:'🟡',msg:`Impressões caíram ${Math.abs(dImp).toFixed(0)}% — pode ser perda de keywords ou queda de demanda. Verifique GSC > Performance > comparar últimos 7d.`});
-            if(dPos>=1.5) sinais.push({nivel:'alto',ic:'🔴',msg:`Posição média piorou ${dPos.toFixed(1)} posições (de ${posAnt.toFixed(1)} para ${posUlt.toFixed(1)}). Verifique se há páginas perdendo ranking ou Core Update do Google recente.`});
-            else if(dPos<=-1.5) sinais.push({nivel:'bom',ic:'🟢',msg:`Posição média melhorou ${Math.abs(dPos).toFixed(1)} posições (${posAnt.toFixed(1)} → ${posUlt.toFixed(1)}).`});
-            if(sinais.length===0) sinais.push({nivel:'info',ic:'⚪',msg:`Sem variações relevantes nos últimos 7d vs anteriores. Cliques ${dCli>=0?'+':''}${dCli.toFixed(1)}% · Impressões ${dImp>=0?'+':''}${dImp.toFixed(1)}% · Posição ${dPos>=0?'+':''}${dPos.toFixed(2)}.`});
-            const corNivel={alto:{bg:'#fef2f2',br:'#fecaca',cor:'#991b1b'},medio:{bg:'#fffbeb',br:'#fde68a',cor:'#92400e'},bom:{bg:'#f0fdf4',br:'#bbf7d0',cor:'#166534'},info:{bg:'#f8fafc',br:'#e2e8f0',cor:'#475569'}};
+
+            // === Performance ===
+            if(dCli<=-15) sinais.push({nivel:'alto',ic:'📉',cat:'Performance',msg:`Cliques caíram ${Math.abs(dCli).toFixed(0)}% (${cliAnt.toLocaleString('pt-BR')} → ${cliUlt.toLocaleString('pt-BR')})`,acao:'Verifique no GSC se alguma página perdeu posição. Pode ser sazonalidade, Core Update ou perda de keywords.'});
+            else if(dCli>=20) sinais.push({nivel:'bom',ic:'📈',cat:'Performance',msg:`Cliques cresceram ${dCli.toFixed(0)}% (${cliAnt.toLocaleString('pt-BR')} → ${cliUlt.toLocaleString('pt-BR')})`,acao:'Identifique quais páginas/keywords cresceram e replique a estratégia.'});
+            if(dImp<=-15) sinais.push({nivel:'medio',ic:'👁',cat:'Visibilidade',msg:`Impressões caíram ${Math.abs(dImp).toFixed(0)}% (${impAnt.toLocaleString('pt-BR')} → ${impUlt.toLocaleString('pt-BR')})`,acao:'Possível perda de keywords no Google. Pode indicar páginas desindexadas ou caindo de posição.'});
+            if(dPos>=1.5) sinais.push({nivel:'alto',ic:'📍',cat:'Ranking',msg:`Posição média piorou ${dPos.toFixed(1)} posições (${posAnt.toFixed(1)} → ${posUlt.toFixed(1)})`,acao:'Verifique GSC → Páginas para identificar quais URLs caíram. Pode ser Core Update ou competição agressiva.'});
+            else if(dPos<=-1.5) sinais.push({nivel:'bom',ic:'📍',cat:'Ranking',msg:`Posição média melhorou ${Math.abs(dPos).toFixed(1)} posições (${posAnt.toFixed(1)} → ${posUlt.toFixed(1)})`,acao:'Continue investindo no que está funcionando.'});
+
+            // === Sinais de possível problema de indexação ===
+            // Páginas no SEMrush com volume mas SEM dados no GSC = pode estar desindexada ou nunca rankeou
+            const semCobertura=smPaginasUnicas.filter(sp=>{
+              if(sp.totalVol<500) return false;
+              const m=gscPaginas.find(g=>_normSlug(g.url)===sp.slug);
+              return !m || (m.impressoes||0)<10;
+            }).slice(0,5);
+            if(semCobertura.length>0){
+              sinais.push({nivel:'medio',ic:'🚨',cat:'Indexação',
+                msg:`${semCobertura.length} página(s) com keywords no SEMrush mas sem aparecer no Google: ${semCobertura.slice(0,3).map(p=>p.slug).join(' · ')}`,
+                acao:'Verifique se essas URLs estão indexadas: Search Console → Inspeção de URL. Se não estiverem, solicite indexação manualmente.'});
+            }
+
+            // Páginas com cliques zerados mas alta posição = perdeu visibilidade súbita
+            const cliquesZerados=gscPaginas.filter(p=>p.cliques===0&&p.impressoes>200).slice(0,3);
+            if(cliquesZerados.length>0){
+              sinais.push({nivel:'medio',ic:'⚡',cat:'CTR Crítico',
+                msg:`${cliquesZerados.length} página(s) com ${cliquesZerados.reduce((s,p)=>s+p.impressoes,0).toLocaleString('pt-BR')} impressões mas ZERO cliques`,
+                acao:'Snippet completamente quebrado ou conteúdo irrelevante para a busca. Revise title/meta ou faça correspondência com a intenção real.'});
+            }
+
+            if(sinais.length===0) sinais.push({nivel:'info',ic:'✅',cat:'Tudo estável',msg:`Sem variações relevantes nos últimos 7d. Cliques ${dCli>=0?'+':''}${dCli.toFixed(1)}% · Impressões ${dImp>=0?'+':''}${dImp.toFixed(1)}% · Posição ${dPos>=0?'+':''}${dPos.toFixed(2)}`,acao:'Continue monitorando e investindo em otimizações da aba "Plano de Ação".'});
+
+            const corNivel={alto:{bg:'#fef2f2',br:'#fecaca',cor:'#991b1b',tag:'#dc2626',tagBg:'#fee2e2'},medio:{bg:'#fffbeb',br:'#fde68a',cor:'#92400e',tag:'#d97706',tagBg:'#fef3c7'},bom:{bg:'#f0fdf4',br:'#bbf7d0',cor:'#166534',tag:'#059669',tagBg:'#dcfce7'},info:{bg:'#f8fafc',br:'#e2e8f0',cor:'#475569',tag:'#64748b',tagBg:'#f1f5f9'}};
             return (
               <div style={{background:'#fff',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
-                <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
+                <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:8}}>
                   <div style={{background:'#fef2f2',borderRadius:8,padding:'6px 8px',fontSize:18}}>📡</div>
                   <div>
-                    <h4 style={{fontSize:14,fontWeight:700,color:'#1e293b',margin:0}}>Alertas — Últimos 7 dias vs 7 dias anteriores</h4>
-                    <p style={{fontSize:11,color:'#94a3b8',margin:'2px 0 0'}}>Detecção de variações relevantes no Search Console</p>
+                    <h4 style={{fontSize:14,fontWeight:700,color:'#1e293b',margin:0}}>Monitor de SEO — variações dos últimos 7 dias</h4>
+                    <p style={{fontSize:11,color:'#94a3b8',margin:'2px 0 0'}}>Compara os últimos 7 dias com os 7 anteriores · detecta quedas de tráfego, perda de ranking, problemas de CTR e possíveis falhas de indexação</p>
                   </div>
+                </div>
+                <div style={{background:'#f8fafc',borderRadius:8,padding:'8px 12px',marginBottom:12,fontSize:11,color:'#64748b',lineHeight:1.5}}>
+                  <strong>O que isso monitora:</strong> performance (cliques, impressões, posição), CTR de páginas-chave e <strong>possíveis problemas de indexação</strong> (páginas com volume no SEMrush mas sem aparecer no Google).
                 </div>
                 <div style={{display:'flex',flexDirection:'column',gap:8}}>
                   {sinais.map((s,i)=>{
                     const c=corNivel[s.nivel];
                     return (
-                      <div key={i} style={{background:c.bg,border:`1px solid ${c.br}`,borderRadius:10,padding:'10px 14px',display:'flex',gap:10,alignItems:'flex-start'}}>
-                        <span style={{fontSize:14,flexShrink:0,marginTop:1}}>{s.ic}</span>
-                        <p style={{fontSize:12,color:c.cor,fontWeight:500,margin:0,lineHeight:1.45}}>{s.msg}</p>
+                      <div key={i} style={{background:c.bg,border:`1px solid ${c.br}`,borderRadius:10,padding:'12px 14px'}}>
+                        <div style={{display:'flex',gap:10,alignItems:'flex-start',marginBottom:s.acao?6:0}}>
+                          <span style={{fontSize:16,flexShrink:0,marginTop:1}}>{s.ic}</span>
+                          <div style={{flex:1}}>
+                            <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:3,flexWrap:'wrap'}}>
+                              <span style={{fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:20,background:c.tagBg,color:c.tag,textTransform:'uppercase',letterSpacing:'.04em'}}>{s.cat}</span>
+                            </div>
+                            <p style={{fontSize:12,color:c.cor,fontWeight:600,margin:0,lineHeight:1.45}}>{s.msg}</p>
+                            {s.acao&&<p style={{fontSize:11,color:c.cor,opacity:.85,margin:'4px 0 0',lineHeight:1.4}}>→ {s.acao}</p>}
+                          </div>
+                        </div>
                       </div>
                     );
                   })}
