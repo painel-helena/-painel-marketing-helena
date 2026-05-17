@@ -249,7 +249,7 @@
     ══════════════════════════════════════════════ */
 
     const API_URL='https://script.google.com/macros/s/AKfycbwBZOxWDRorND_UcRk2xLtFvE4HEV9wiK1z46S3uDyp0GuzJ2Hx4sMLA6DUR29BV60d/exec';
-    const API_TOKEN='Hln@2026#mkt!9x';
+    const API_TOKEN='Hln2026mktSeg9x';
 
     /* ══════════════════════════════════════════════
        UTILITÁRIOS
@@ -2020,6 +2020,7 @@
 
     const AbaEstrategia=({api,diasApi=30,de,ate})=>{
       const [openAcao,setOpenAcao]=useState(null);
+      const [planoFiltro,setPlanoFiltro]=useState('todos'); // todos | a_fazer | em_curso | concluido
       const toMK=d=>d?String(d.getFullYear())+String(d.getMonth()+1).padStart(2,'0'):'';
       const startKey=toMK(de);
       const endKey=toMK(ate);
@@ -2485,6 +2486,232 @@
             <span style={{marginLeft:'auto',fontSize:11,color:'#94a3b8'}}>Últimos {diasApi} dias</span>
           </div>
 
+          {/* ═══════════════════════════════════════════════════════════
+              GESTÃO — Plano de Ação Manual + Histórico + Snapshots + Insights
+              Lê dados da planilha (4 abas) via Apps Script
+              ═══════════════════════════════════════════════════════════ */}
+          {(()=>{
+            const g=api?.gestao;
+            const plano=g?.plano||[];
+            const hist=g?.historico||[];
+            const snaps=g?.snapshots||[];
+            const insights=g?.insights||[];
+            if(plano.length===0&&hist.length===0&&snaps.length===0&&insights.length===0){
+              return (
+                <div style={{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:10,padding:'12px 16px',display:'flex',gap:10,alignItems:'center'}}>
+                  <span style={{fontSize:16}}>📋</span>
+                  <div style={{flex:1}}>
+                    <p style={{fontSize:12,fontWeight:600,color:'#92400e',margin:0}}>Plano de Ação ainda não configurado</p>
+                    <p style={{fontSize:11,color:'#78350f',margin:'2px 0 0'}}>Crie as abas <strong>Plano_Acao</strong>, <strong>Historico_Mudancas</strong>, <strong>Snapshots_Mensais</strong> e <strong>Insights</strong> na sua planilha para começar a gerenciar suas ações de marketing aqui.</p>
+                  </div>
+                </div>
+              );
+            }
+            // Filtrar plano por status
+            const statusNorm=(s)=>String(s||'').toLowerCase().replace(/\s+/g,'_').replace('a_fazer','a_fazer').replace('em_curso','em_curso').replace('conclu','concluido').replace('cancela','cancelado');
+            const planoFiltrado=plano.filter(p=>{
+              if(planoFiltro==='todos') return true;
+              return statusNorm(p.status)===planoFiltro;
+            });
+            const cntFazer=plano.filter(p=>statusNorm(p.status)==='a_fazer').length;
+            const cntCurso=plano.filter(p=>statusNorm(p.status)==='em_curso').length;
+            const cntConcl=plano.filter(p=>statusNorm(p.status)==='concluido').length;
+            const corPrio=(p)=>{const x=String(p||'').toLowerCase();return x.includes('alta')?'#dc2626':x.includes('média')||x.includes('media')?'#d97706':'#6366f1';};
+            const bgPrio =(p)=>{const x=String(p||'').toLowerCase();return x.includes('alta')?'#fef2f2':x.includes('média')||x.includes('media')?'#fffbeb':'#eef2ff';};
+            const corStat=(s)=>{const x=statusNorm(s);return x==='concluido'?'#059669':x==='em_curso'?'#0891b2':x==='cancelado'?'#94a3b8':'#6366f1';};
+            const bgStat =(s)=>{const x=statusNorm(s);return x==='concluido'?'#ecfdf5':x==='em_curso'?'#ecfeff':x==='cancelado'?'#f1f5f9':'#eef2ff';};
+
+            return (
+              <div style={{display:'flex',flexDirection:'column',gap:16}}>
+                {/* Cabeçalho geral da gestão */}
+                <div style={{background:'linear-gradient(135deg,#312e81 0%,#1e40af 100%)',borderRadius:12,padding:'16px 20px',color:'#fff'}}>
+                  <div style={{display:'flex',gap:10,alignItems:'center',marginBottom:4}}>
+                    <span style={{fontSize:20}}>📋</span>
+                    <h4 style={{fontSize:15,fontWeight:700,margin:0}}>Plano de Ação · Gestão de Marketing</h4>
+                  </div>
+                  <p style={{fontSize:11,opacity:.85,margin:'0 0 12px'}}>Ações cadastradas pelo time · sincronizado com sua planilha</p>
+                  <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
+                    <div style={{background:'rgba(255,255,255,.15)',padding:'8px 14px',borderRadius:8,minWidth:90}}>
+                      <p style={{fontSize:10,opacity:.8,margin:0,fontWeight:600}}>A FAZER</p>
+                      <p style={{fontSize:20,fontWeight:800,margin:0}}>{cntFazer}</p>
+                    </div>
+                    <div style={{background:'rgba(255,255,255,.15)',padding:'8px 14px',borderRadius:8,minWidth:90}}>
+                      <p style={{fontSize:10,opacity:.8,margin:0,fontWeight:600}}>EM CURSO</p>
+                      <p style={{fontSize:20,fontWeight:800,margin:0}}>{cntCurso}</p>
+                    </div>
+                    <div style={{background:'rgba(255,255,255,.15)',padding:'8px 14px',borderRadius:8,minWidth:90}}>
+                      <p style={{fontSize:10,opacity:.8,margin:0,fontWeight:600}}>CONCLUÍDAS</p>
+                      <p style={{fontSize:20,fontWeight:800,margin:0}}>{cntConcl}</p>
+                    </div>
+                    <div style={{background:'rgba(255,255,255,.15)',padding:'8px 14px',borderRadius:8,minWidth:90}}>
+                      <p style={{fontSize:10,opacity:.8,margin:0,fontWeight:600}}>HISTÓRICO</p>
+                      <p style={{fontSize:20,fontWeight:800,margin:0}}>{hist.length}</p>
+                    </div>
+                    <div style={{background:'rgba(255,255,255,.15)',padding:'8px 14px',borderRadius:8,minWidth:90}}>
+                      <p style={{fontSize:10,opacity:.8,margin:0,fontWeight:600}}>INSIGHTS</p>
+                      <p style={{fontSize:20,fontWeight:800,margin:0}}>{insights.length}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* PLANO DE AÇÃO */}
+                {plano.length>0&&(
+                  <div style={{background:'#fff',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12,flexWrap:'wrap'}}>
+                      <div style={{background:'#eef2ff',borderRadius:8,padding:'6px 8px',fontSize:18}}>✅</div>
+                      <div style={{flex:1,minWidth:200}}>
+                        <h4 style={{fontSize:14,fontWeight:700,color:'#1e293b',margin:0}}>Plano de Ação Cadastrado</h4>
+                        <p style={{fontSize:11,color:'#94a3b8',margin:'2px 0 0'}}>{planoFiltrado.length} de {plano.length} ações</p>
+                      </div>
+                      <div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
+                        {[{k:'todos',l:'Todas'},{k:'a_fazer',l:'A fazer'},{k:'em_curso',l:'Em curso'},{k:'concluido',l:'Concluídas'}].map(b=>(
+                          <button key={b.k} onClick={()=>setPlanoFiltro(b.k)}
+                            style={{padding:'4px 10px',borderRadius:6,border:'1px solid',borderColor:planoFiltro===b.k?'#6366f1':'#e2e8f0',background:planoFiltro===b.k?'#6366f1':'#fff',color:planoFiltro===b.k?'#fff':'#64748b',fontSize:11,fontWeight:600,cursor:'pointer'}}>
+                            {b.l}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {planoFiltrado.length===0?(
+                      <div style={{textAlign:'center',padding:24,color:'#94a3b8',fontSize:12}}>Nenhuma ação neste filtro.</div>
+                    ):(
+                      <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                        {planoFiltrado.slice(0,15).map((a,i)=>{
+                          const pCor=corPrio(a.prioridade);const pBg=bgPrio(a.prioridade);
+                          const sCor=corStat(a.status);const sBg=bgStat(a.status);
+                          return (
+                            <div key={i} style={{padding:'12px 14px',background:'#f8fafc',borderRadius:10,borderLeft:`4px solid ${pCor}`,border:'1px solid #e2e8f0'}}>
+                              <div style={{display:'flex',gap:10,alignItems:'flex-start',flexWrap:'wrap'}}>
+                                <div style={{flex:1,minWidth:200}}>
+                                  <p style={{fontSize:13,fontWeight:600,color:'#1e293b',margin:'0 0 6px'}}>{a.acao||a['ação']||'(sem descrição)'}</p>
+                                  <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                                    {a.categoria&&<span style={{fontSize:10,padding:'2px 8px',borderRadius:20,background:'#f1f5f9',color:'#475569',fontWeight:600}}>{a.categoria}</span>}
+                                    {(a.paginacanal||a['página/canal']||a.pagina_canal)&&<span style={{fontSize:10,padding:'2px 8px',borderRadius:20,background:'#eef2ff',color:'#4338ca',fontWeight:600}}>📍 {a.paginacanal||a['página/canal']||a.pagina_canal}</span>}
+                                    {a.prioridade&&<span style={{fontSize:10,padding:'2px 8px',borderRadius:20,background:pBg,color:pCor,fontWeight:700,textTransform:'uppercase'}}>{a.prioridade}</span>}
+                                    {a.status&&<span style={{fontSize:10,padding:'2px 8px',borderRadius:20,background:sBg,color:sCor,fontWeight:700,textTransform:'uppercase'}}>{a.status}</span>}
+                                    {a.responsavel&&<span style={{fontSize:10,padding:'2px 8px',borderRadius:20,background:'#fff',border:'1px solid #e2e8f0',color:'#64748b',fontWeight:500}}>👤 {a.responsavel}</span>}
+                                  </div>
+                                </div>
+                                <div style={{textAlign:'right',fontSize:10,color:'#94a3b8',minWidth:90}}>
+                                  {(a.data_prevista||a.data)&&<p style={{margin:'0 0 2px'}}>📅 {a.data_prevista||a.data}</p>}
+                                  {a.data_conclusao&&<p style={{margin:0,color:'#059669'}}>✓ {a.data_conclusao}</p>}
+                                </div>
+                              </div>
+                              {a.resultado&&(
+                                <div style={{marginTop:8,padding:'6px 10px',background:'#ecfdf5',borderRadius:6,fontSize:11,color:'#065f46'}}>
+                                  <strong>Resultado:</strong> {a.resultado}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                        {planoFiltrado.length>15&&<p style={{textAlign:'center',fontSize:11,color:'#94a3b8',margin:'8px 0 0'}}>Mostrando 15 de {planoFiltrado.length} ações.</p>}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* SNAPSHOTS MENSAIS — comparação de evolução */}
+                {snaps.length>0&&(
+                  <div style={{background:'#fff',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
+                      <div style={{background:'#f0fdf4',borderRadius:8,padding:'6px 8px',fontSize:18}}>📊</div>
+                      <div>
+                        <h4 style={{fontSize:14,fontWeight:700,color:'#1e293b',margin:0}}>Evolução Mês a Mês</h4>
+                        <p style={{fontSize:11,color:'#94a3b8',margin:'2px 0 0'}}>Snapshots mensais para acompanhar evolução real</p>
+                      </div>
+                    </div>
+                    <div style={{overflowX:'auto'}}>
+                      <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                        <thead>
+                          <tr style={{background:'#f8fafc'}}>
+                            {['Mês','Sessões','Cliques GSC','Pos. Média','Leads','MQL+SQL','Conv %','Observações'].map(h=>(
+                              <th key={h} style={{padding:'8px 10px',textAlign:'left',fontWeight:600,color:'#64748b',fontSize:11,borderBottom:'1px solid #e2e8f0'}}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {snaps.slice().reverse().slice(0,12).map((s,i)=>(
+                            <tr key={i} style={{borderBottom:'1px solid #f1f5f9',background:i%2===0?'#fff':'#fafafa'}}>
+                              <td style={{padding:'8px 10px',fontWeight:700,color:'#1e293b'}}>{s.mes||s.mês||'—'}</td>
+                              <td style={{padding:'8px 10px',color:'#475569'}}>{s.sessoes||s.sessões||'—'}</td>
+                              <td style={{padding:'8px 10px',color:'#475569'}}>{s.cliques_gsc||s.cliques||'—'}</td>
+                              <td style={{padding:'8px 10px',color:'#475569'}}>{s.posicao_media||s['pos_média']||s.pos_media||'—'}</td>
+                              <td style={{padding:'8px 10px',color:'#475569'}}>{s.leads_total||s.leads||'—'}</td>
+                              <td style={{padding:'8px 10px',color:'#475569'}}>{s.mqlsql||s['mql+sql']||s.mql_sql||'—'}</td>
+                              <td style={{padding:'8px 10px',fontWeight:600,color:'#059669'}}>{s.conv||s['conv_%']||s.conv_pct||'—'}</td>
+                              <td style={{padding:'8px 10px',color:'#64748b',fontSize:11,maxWidth:260}}>{s.observacoes||s.observações||'—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* HISTÓRICO DE MUDANÇAS + INSIGHTS lado a lado */}
+                <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(360px,1fr))',gap:16}}>
+                  {hist.length>0&&(
+                    <div style={{background:'#fff',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
+                      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
+                        <div style={{background:'#fffbeb',borderRadius:8,padding:'6px 8px',fontSize:18}}>📜</div>
+                        <div>
+                          <h4 style={{fontSize:14,fontWeight:700,color:'#1e293b',margin:0}}>Histórico de Mudanças</h4>
+                          <p style={{fontSize:11,color:'#94a3b8',margin:'2px 0 0'}}>O que foi alterado e o resultado</p>
+                        </div>
+                      </div>
+                      <div style={{display:'flex',flexDirection:'column',gap:8,maxHeight:380,overflowY:'auto'}}>
+                        {hist.slice().reverse().slice(0,10).map((h,i)=>(
+                          <div key={i} style={{padding:'10px 12px',background:'#f8fafc',borderRadius:8,border:'1px solid #e2e8f0'}}>
+                            <div style={{display:'flex',gap:6,alignItems:'center',marginBottom:4,flexWrap:'wrap'}}>
+                              <span style={{fontSize:10,fontWeight:700,color:'#94a3b8'}}>{h.data||'—'}</span>
+                              {(h.paginacanal||h['página/canal']||h.pagina_canal)&&<span style={{fontSize:10,padding:'1px 7px',borderRadius:20,background:'#eef2ff',color:'#4338ca',fontWeight:600}}>{h.paginacanal||h['página/canal']||h.pagina_canal}</span>}
+                              {h.quem&&<span style={{fontSize:10,color:'#64748b'}}>· {h.quem}</span>}
+                            </div>
+                            <p style={{fontSize:12,fontWeight:600,color:'#1e293b',margin:'0 0 4px'}}>{h.o_que_mudou||h['o_que_mudou']||h.mudanca||'—'}</p>
+                            {h.motivo&&<p style={{fontSize:11,color:'#64748b',margin:'0 0 4px'}}><strong>Motivo:</strong> {h.motivo}</p>}
+                            {h.resultado_real&&<div style={{fontSize:11,color:'#065f46',background:'#ecfdf5',padding:'4px 8px',borderRadius:5,margin:'4px 0 0'}}>✓ {h.resultado_real}</div>}
+                            {h.aprendizado&&<div style={{fontSize:11,color:'#7c3aed',fontStyle:'italic',margin:'4px 0 0'}}>💡 {h.aprendizado}</div>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {insights.length>0&&(
+                    <div style={{background:'#fff',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
+                      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
+                        <div style={{background:'#f5f3ff',borderRadius:8,padding:'6px 8px',fontSize:18}}>💡</div>
+                        <div>
+                          <h4 style={{fontSize:14,fontWeight:700,color:'#1e293b',margin:0}}>Insights & Aprendizados</h4>
+                          <p style={{fontSize:11,color:'#94a3b8',margin:'2px 0 0'}}>Anotações estratégicas do time</p>
+                        </div>
+                      </div>
+                      <div style={{display:'flex',flexDirection:'column',gap:8,maxHeight:380,overflowY:'auto'}}>
+                        {insights.slice().reverse().slice(0,10).map((it,i)=>{
+                          const stLow=String(it.status||'').toLowerCase();
+                          const stCor=stLow.includes('valid')?'#059669':stLow.includes('teste')?'#0891b2':stLow.includes('descart')?'#94a3b8':'#7c3aed';
+                          const stBg =stLow.includes('valid')?'#ecfdf5':stLow.includes('teste')?'#ecfeff':stLow.includes('descart')?'#f1f5f9':'#f5f3ff';
+                          return (
+                            <div key={i} style={{padding:'10px 12px',background:'#f8fafc',borderRadius:8,border:'1px solid #e2e8f0'}}>
+                              <div style={{display:'flex',gap:6,alignItems:'center',marginBottom:4,flexWrap:'wrap'}}>
+                                <span style={{fontSize:10,fontWeight:700,color:'#94a3b8'}}>{it.data||'—'}</span>
+                                {it.categoria&&<span style={{fontSize:10,padding:'1px 7px',borderRadius:20,background:'#f1f5f9',color:'#475569',fontWeight:600}}>{it.categoria}</span>}
+                                {it.status&&<span style={{fontSize:10,padding:'1px 7px',borderRadius:20,background:stBg,color:stCor,fontWeight:700,textTransform:'uppercase'}}>{it.status}</span>}
+                              </div>
+                              <p style={{fontSize:12,color:'#1e293b',margin:0,lineHeight:1.45}}>{it.insight||'—'}</p>
+                              {(it.paginacanal||it['página/canal']||it.pagina_canal)&&<p style={{fontSize:10,color:'#64748b',margin:'4px 0 0'}}>📍 {it.paginacanal||it['página/canal']||it.pagina_canal}</p>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Cruzamento Leads × Tráfego */}
           {leadsOk&&ga4Total>0&&(
           <div style={{background:'#fff',borderRadius:12,padding:20,boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
@@ -2922,20 +3149,32 @@
       const [showCal,setShowCal]=useState(false);
       const [api,setApi]=useState(null);
       const [apiStatus,setApiStatus]=useState('carregando');
-      const [diasApi,setDiasApi]=useState(30);
+      // Drafts: usuário edita nos inputs, só aplica ao clicar "Aplicar período"
+      const [deDraft,setDeDraft]=useState(de);
+      const [ateDraft,setAteDraft]=useState(ate);
+
+      // diasApi derivado automaticamente de de/ate — sempre coerente
+      const diffDias=(d1,d2)=>Math.max(1,Math.ceil(Math.abs(d2.getTime()-d1.getTime())/(1000*60*60*24)));
+      const diasApi=diffDias(de,ate);
 
       useEffect(()=>{
         setApiStatus('carregando');
-        fetch(API_URL+'?dias='+diasApi+'&token='+API_TOKEN)
+        const fmtD=(d)=>{const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),dd=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${dd}`;};
+        // encodeURIComponent escapa caracteres especiais (#, @, !) — sem isso o # quebra a URL
+        const url=`${API_URL}?dias=${diasApi}&de=${fmtD(de)}&ate=${fmtD(ate)}&token=${encodeURIComponent(API_TOKEN)}`;
+        fetch(url)
           .then(r=>r.json())
           .then(d=>{ setApi(d); setApiStatus('ok'); })
           .catch(()=>setApiStatus('erro'));
-      },[diasApi]);
+      },[de,ate]);
+
+      // Sincroniza drafts quando atalhos atualizam de/ate
+      useEffect(()=>{ setDeDraft(de); setAteDraft(ate); },[de,ate]);
 
       const ATALHOS=[
-        {l:'7 dias', fn:()=>{ setDe(makeDate(7));  setAte(TODAY); setDiasApi(7);  setShowCal(false); }},
-        {l:'30 dias',fn:()=>{ setDe(makeDate(30)); setAte(TODAY); setDiasApi(30); setShowCal(false); }},
-        {l:'90 dias',fn:()=>{ setDe(makeDate(90)); setAte(TODAY); setDiasApi(90); setShowCal(false); }},
+        {l:'7 dias', fn:()=>{ setDe(makeDate(7));  setAte(TODAY); setShowCal(false); }},
+        {l:'30 dias',fn:()=>{ setDe(makeDate(30)); setAte(TODAY); setShowCal(false); }},
+        {l:'90 dias',fn:()=>{ setDe(makeDate(90)); setAte(TODAY); setShowCal(false); }},
         {l:'Este mês',fn:()=>{ const d=new Date(TODAY); d.setDate(1); setDe(d); setAte(TODAY); setShowCal(false); }},
         {l:'Ano atual',fn:()=>{ const d=new Date(TODAY); d.setMonth(0,1); setDe(d); setAte(TODAY); setShowCal(false); }},
       ];
@@ -3009,21 +3248,21 @@
                     <div style={{display:'flex',alignItems:'center',gap:8}}>
                       <div style={{flex:1}}>
                         <p style={{fontSize:10,color:'#94a3b8',margin:'0 0 4px',fontWeight:600}}>DE</p>
-                        <input type="date" value={toInput(de)}
-                          max={toInput(ate)}
-                          onChange={e=>{ if(e.target.value) setDe(new Date(e.target.value+'T00:00:00')); }}
+                        <input type="date" value={toInput(deDraft)}
+                          max={toInput(ateDraft)}
+                          onChange={e=>{ if(e.target.value) setDeDraft(new Date(e.target.value+'T00:00:00')); }}
                           style={{width:'100%'}}/>
                       </div>
                       <span style={{color:'#94a3b8',marginTop:16}}>→</span>
                       <div style={{flex:1}}>
                         <p style={{fontSize:10,color:'#94a3b8',margin:'0 0 4px',fontWeight:600}}>ATÉ</p>
-                        <input type="date" value={toInput(ate)}
-                          min={toInput(de)} max={toInput(TODAY)}
-                          onChange={e=>{ if(e.target.value) setAte(new Date(e.target.value+'T23:59:59')); }}
+                        <input type="date" value={toInput(ateDraft)}
+                          min={toInput(deDraft)} max={toInput(TODAY)}
+                          onChange={e=>{ if(e.target.value) setAteDraft(new Date(e.target.value+'T23:59:59')); }}
                           style={{width:'100%'}}/>
                       </div>
                     </div>
-                    <button onClick={()=>setShowCal(false)}
+                    <button onClick={()=>{ setDe(deDraft); setAte(ateDraft); setShowCal(false); }}
                       style={{marginTop:12,width:'100%',padding:'7px',background:'#6366f1',color:'#fff',border:'none',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer'}}>
                       Aplicar período
                     </button>
