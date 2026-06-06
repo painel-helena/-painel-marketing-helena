@@ -1,0 +1,2 @@
+Arquivo de teste — validação do fluxo de commit/push pelo Claude Code.
+Pode ser removido. Commit assinado como Hellen Mota.
