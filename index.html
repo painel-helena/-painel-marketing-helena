@@ -460,61 +460,68 @@
     ══════════════════════════════════════════════ */
 
     const AbaLeads=({de,ate,tipo,api})=>{
-      const [origem,setOrigem]=useState('all');           // all | pago | organico | sem_origem
+      const [origem,setOrigem]=useState('all');           // foco do resumo do topo
       const ld = api?.leads || {};
       const hasLeads = (ld.porMes||[]).length > 0;
 
+      const GRUPOS = [
+        {key:'pago',            label:'Pago / Ads',               cor:'#ef4444'},
+        {key:'organico',        label:'Orgânico identificado',    cor:'#10b981'},
+        {key:'sem_origem',      label:'Sem origem de conversão',  cor:'#6366f1'},
+        {key:'nao_classificada',label:'Não classificada',         cor:'#94a3b8'},
+      ];
+      const grupoLabel = k => (GRUPOS.find(g=>g.key===k)||{label:k}).label;
+
       const toMK = d => d ? String(d.getFullYear()) + String(d.getMonth()+1).padStart(2,'0') : '';
-      const startKey = toMK(de), endKey = toMK(ate);
-      const inRange = mk => (!startKey||mk>=startKey) && (!endKey||mk<=endKey);
+      const sk = toMK(de), ek = toMK(ate);
+      const inRange = mk => (!sk||mk>=sk) && (!ek||mk<=ek);
 
-      // ── porCanalMes é a base mestre: tem mês × origem × tipo × etapa ──
-      const cmAll = (ld.porCanalMes||[]).filter(c=>inRange(c.mesKey));      // período (todas as origens)
-      const cm    = cmAll.filter(c => origem==='all' || c.tipoOrigem===origem); // + filtro de origem
+      // ── base mestre: porCanalMes (mês × canal × tipo × etapa) ──
+      const cmAll  = (ld.porCanalMes||[]).filter(c=>inRange(c.mesKey));         // todas as origens
+      const cmFoco = cmAll.filter(c => origem==='all' || c.tipoOrigem===origem); // + foco de origem (topo)
+      // porMes do período (visão geral / conferências — sempre completo)
+      const mesesP = (ld.porMes||[]).filter(m=>inRange(m.mesKey)).sort((a,b)=> a.mesKey>b.mesKey?1:-1);
 
-      // pega o campo certo conforme o filtro de tipo (Todos / CF / WL)
-      const pick    = (c,base)=> tipo==='cliente_final'?(c['cf_'+base]||0): tipo==='white_label'?(c['wl_'+base]||0):(c[base]||0);
+      // soma respeitando o filtro de TIPO (Todos / CF / WL)
+      const pick    = (c,b)=> tipo==='cliente_final'?(c['cf_'+b]||0): tipo==='white_label'?(c['wl_'+b]||0):(c[b]||0);
       const pickTot = c => tipo==='cliente_final'?(c.cf||0): tipo==='white_label'?(c.wl||0):(c.total||c.count||0);
-      const agg = rows => { const o={total:0,lead:0,mql:0,sql:0,ganho:0,perdido:0};
-        rows.forEach(c=>{ o.total+=pickTot(c); o.lead+=pick(c,'lead'); o.mql+=pick(c,'mql'); o.sql+=pick(c,'sql'); o.ganho+=pick(c,'ganho'); o.perdido += tipo==='all'?(c.perdido||0):0; });
+      const aggSt = rows => { const o={total:0,lead:0,mql:0,sql:0,ganho:0};
+        rows.forEach(c=>{ o.total+=pickTot(c); o.lead+=pick(c,'lead'); o.mql+=pick(c,'mql'); o.sql+=pick(c,'sql'); o.ganho+=pick(c,'ganho'); });
+        return o; };
+      const aggTipo = (rows,t) => { const o={total:0,lead:0,mql:0,sql:0,ganho:0};
+        rows.forEach(c=>{ o.total+=(c[t]||0); o.lead+=(c[t+'_lead']||0); o.mql+=(c[t+'_mql']||0); o.sql+=(c[t+'_sql']||0); o.ganho+=(c[t+'_ganho']||0); });
         return o; };
 
-      const A = agg(cm);
-      const total=A.total, mqlMais=A.mql+A.sql+A.ganho, sqlMais=A.sql+A.ganho, ganho=A.ganho, perdido=A.perdido;
-      const taxaGanho = total? ganho/total*100 : 0;
+      // ── resumo do topo (respeita período + tipo + foco) ──
+      const F = aggSt(cmFoco);
+      const taxaGanho = F.total ? F.ganho/F.total*100 : 0;
 
-      // ── por origem (sempre os 3 grupos; respeita período + tipo, ignora filtro de origem) ──
-      const grupos = [
-        {key:'pago',       label:'Pago / Ads', cor:'#ef4444'},
-        {key:'organico',   label:'Orgânico',   cor:'#10b981'},
-        {key:'sem_origem', label:'Sem origem', cor:'#6366f1'},
+      // ── CF × WL (período + foco) ──
+      const cfA = aggTipo(cmFoco,'cf'), wlA = aggTipo(cmFoco,'wl');
+
+      // ── por canal (4 baldes; respeita período + tipo; mostra sempre os 4) ──
+      const porCanal = GRUPOS.map(g => { const a=aggSt(cmAll.filter(c=>c.tipoOrigem===g.key)); return {...g, ...a}; });
+      const totalCanais = porCanal.reduce((s,g)=>s+g.total,0);
+      const canalPie = porCanal.filter(g=>g.total>0).map(g=>({name:g.label,value:g.total,color:g.cor}));
+
+      // ── White Label por canal (etapas WL) ──
+      const wlPorCanal = GRUPOS.map(g => { let lead=0,mql=0,sql=0,ganho=0,total=0;
+        cmAll.filter(c=>c.tipoOrigem===g.key).forEach(c=>{ total+=(c.wl||0); lead+=(c.wl_lead||0); mql+=(c.wl_mql||0); sql+=(c.wl_sql||0); ganho+=(c.wl_ganho||0); });
+        return {...g, total, lead, mql, sql, ganho}; }).filter(g=>g.total>0);
+
+      // ── conferências (todo o período, completo) ──
+      const T = mesesP.reduce((o,m)=>{ ['total','cf','wl','lead','mql','sql','ganho','pago','organico','sem_origem','nao_classificada'].forEach(k=>o[k]=(o[k]||0)+(m[k]||0)); return o; }, {});
+      const conf = [
+        {nome:'Total = Lead + MQL + SQL + Ganho', a:(T.lead||0)+(T.mql||0)+(T.sql||0)+(T.ganho||0), b:T.total||0},
+        {nome:'Total = Cliente Final + White Label', a:(T.cf||0)+(T.wl||0), b:T.total||0},
+        {nome:'Total = Pago + Orgânico + Sem origem + Não class.', a:(T.pago||0)+(T.organico||0)+(T.sem_origem||0)+(T.nao_classificada||0), b:T.total||0},
       ];
-      const porGrupo = grupos.map(g=>{ const a=agg(cmAll.filter(c=>c.tipoOrigem===g.key));
-        return {...g, ...a, mqlMais:a.mql+a.sql+a.ganho, sqlMais:a.sql+a.ganho, taxa:a.total?a.ganho/a.total*100:0}; });
-      const totalGeral = porGrupo.reduce((s,g)=>s+g.total,0);
-      const origemPie  = porGrupo.filter(g=>g.total>0).map(g=>({name:g.label,value:g.total,color:g.cor}));
 
-      // ── CF vs WL (respeita período + origem; ignora filtro de tipo) ──
-      const aggTipo=(rows,t)=>{ const o={total:0,mql:0,sql:0,ganho:0};
-        rows.forEach(c=>{ o.total+=(c[t]||0); o.mql+=(c[t+'_mql']||0); o.sql+=(c[t+'_sql']||0); o.ganho+=(c[t+'_ganho']||0); }); return o; };
-      const cfA=aggTipo(cm,'cf'), wlA=aggTipo(cm,'wl');
-
-      // ── meses (evolução usa o período inteiro; MoM respeita os filtros) ──
-      const mesesAll=[...new Set(cmAll.map(c=>c.mesKey))].sort();
-      const mesesCm =[...new Set(cm.map(c=>c.mesKey))].sort();
-      const mesLabel={}; (ld.porMes||[]).forEach(m=>mesLabel[m.mesKey]=m.mes);
-      const evoLabels=mesesAll.map(mk=>mesLabel[mk]||mk);
-      const evoData = g => mesesAll.map(mk=>agg(cmAll.filter(c=>c.mesKey===mk && c.tipoOrigem===g)).total);
-
-      const totMes = mk => agg(cm.filter(c=>c.mesKey===mk)).total;
-      const lastMK=mesesCm[mesesCm.length-1], prevMK=mesesCm[mesesCm.length-2];
-      const momPct = lastMK&&prevMK&&totMes(prevMK)>0 ? (totMes(lastMK)-totMes(prevMK))/totMes(prevMK)*100 : null;
-
-      // ── leads recentes (respeita data exata + tipo + origem) ──
+      // ── leads recentes (data exata + tipo + foco) ──
       const parseData = s => { if(!s) return null; const [d,m,y]=s.split('/'); return new Date(+y,+m-1,+d); };
       const deT=de?new Date(de.getFullYear(),de.getMonth(),de.getDate()).getTime():null;
       const ateT=ate?new Date(ate.getFullYear(),ate.getMonth(),ate.getDate(),23,59,59).getTime():null;
-      const grpRec = l => l.pago?'pago':(String(l.canal||'').toLowerCase().includes('sem origem')?'sem_origem':'organico');
+      const grpRec = l => l.pago?'pago':(String(l.canal||'').toLowerCase().includes('não classific')?'nao_classificada':String(l.canal||'').toLowerCase().includes('sem origem')?'sem_origem':'organico');
       const recentes=(ld.recentes||[]).filter(l=>{
         const d=parseData(l.data); if(d){ if(deT&&d.getTime()<deT) return false; if(ateT&&d.getTime()>ateT) return false; }
         if(tipo!=='all' && l.tipo!==tipo) return false;
@@ -522,36 +529,20 @@
         return true;
       });
 
-      // ── insights automáticos ──
+      // ── insights ──
       const ins=[];
-      if(momPct!==null){
-        if(momPct>=5) ins.push({ic:'📈',cor:'#059669',bg:'#ecfdf5',bd:'#bbf7d0',txt:`Volume de leads cresceu +${momPct.toFixed(0)}% no último mês do período — tendência positiva.`});
-        else if(momPct<=-5) ins.push({ic:'📉',cor:'#dc2626',bg:'#fef2f2',bd:'#fecaca',txt:`Volume de leads caiu ${momPct.toFixed(0)}% no último mês do período — vale investigar a causa.`});
-      }
-      const elig=[...porGrupo].filter(g=>g.total>=20);
-      const melhor=[...elig].sort((a,b)=>b.taxa-a.taxa)[0];
-      const pior  =[...elig].sort((a,b)=>a.taxa-b.taxa)[0];
-      if(melhor) ins.push({ic:'🏆',cor:'#059669',bg:'#ecfdf5',bd:'#bbf7d0',txt:`${melhor.label} é a origem que mais vira Ganho: ${pct(melhor.taxa)} dos leads fecham. Vale concentrar esforço aqui.`});
-      if(melhor&&pior&&melhor.key!==pior.key&&melhor.taxa>pior.taxa+5) ins.push({ic:'⚖️',cor:'#4338ca',bg:'#eef2ff',bd:'#c7d2fe',txt:`${pior.label} converte bem menos (${pct(pior.taxa)}) do que ${melhor.label} (${pct(melhor.taxa)}). Revisar a qualidade dessa origem.`});
-      const semG=porGrupo.find(g=>g.key==='sem_origem');
-      if(semG&&totalGeral&&semG.total/totalGeral>0.35) ins.push({ic:'🔎',cor:'#d97706',bg:'#fffbeb',bd:'#fde68a',txt:`${pct(semG.total/totalGeral*100)} dos leads estão SEM origem rastreada — melhorar UTMs/etiquetas daria muito mais clareza de canal.`});
-      if(total>=30&&taxaGanho<8) ins.push({ic:'⚠️',cor:'#d97706',bg:'#fffbeb',bd:'#fde68a',txt:`Taxa de Ganho geral de ${pct(taxaGanho)} no recorte atual — olhar os gargalos entre MQL → SQL → Ganho.`});
-      if(cfA.total>0&&wlA.total>0){
-        const cfTx=cfA.ganho/cfA.total*100, wlTx=wlA.ganho/wlA.total*100;
-        if(Math.abs(cfTx-wlTx)>5) ins.push({ic:'💡',cor:'#4338ca',bg:'#eef2ff',bd:'#c7d2fe',txt:`${cfTx>wlTx?'Cliente Final':'White Label'} converte melhor em Ganho (${pct(Math.max(cfTx,wlTx))} vs ${pct(Math.min(cfTx,wlTx))}).`});
-      }
+      const elig=[...porCanal].filter(g=>g.total>=20 && g.key!=='nao_classificada');
+      const melhor=[...elig].sort((a,b)=>(b.ganho/b.total)-(a.ganho/a.total))[0];
+      if(melhor) ins.push({ic:'🏆',cor:'#059669',bg:'#ecfdf5',bd:'#bbf7d0',txt:`${melhor.label} é a origem que mais vira Ganho: ${pct(melhor.ganho/melhor.total*100)} dos leads fecham. Vale concentrar esforço aqui.`});
+      const sem=porCanal.find(g=>g.key==='sem_origem');
+      if(sem && totalCanais && sem.total/totalCanais>0.3) ins.push({ic:'🔎',cor:'#d97706',bg:'#fffbeb',bd:'#fde68a',txt:`${pct(sem.total/totalCanais*100)} dos leads estão SEM origem rastreada — melhorar UTMs/etiquetas daria muito mais clareza de canal.`});
+      const nc=porCanal.find(g=>g.key==='nao_classificada');
+      if(nc && nc.total>0) ins.push({ic:'⚪',cor:'#475569',bg:'#f8fafc',bd:'#e2e8f0',txt:`${fmt(nc.total)} leads com origem rastreada mas não classificada — revisar e encaixar em Pago ou Orgânico.`});
+      if(cfA.total>0 && wlA.total>0){ const cfx=cfA.ganho/cfA.total*100, wlx=wlA.ganho/wlA.total*100;
+        if(Math.abs(cfx-wlx)>5) ins.push({ic:'💡',cor:'#4338ca',bg:'#eef2ff',bd:'#c7d2fe',txt:`${cfx>wlx?'Cliente Final':'White Label'} converte melhor em Ganho (${pct(Math.max(cfx,wlx))} vs ${pct(Math.min(cfx,wlx))}).`}); }
 
       const tipoLabel = tipo==='cliente_final'?'Cliente Final':tipo==='white_label'?'White Label':'Todos os tipos';
-      const origemLabel = origem==='all'?'todas as origens':(grupos.find(g=>g.key===origem)||{}).label;
-
-      const PillOrigem = () => (
-        <div style={{display:'inline-flex',background:'#f1f5f9',borderRadius:8,padding:3,gap:2,flexWrap:'wrap'}}>
-          {[['all','Todas'],['pago','🟥 Pago'],['organico','🟩 Orgânico'],['sem_origem','🟦 Sem origem']].map(([v,l])=>(
-            <button key={v} onClick={()=>setOrigem(v)} className={origem===v?'pill-a':'pill-i'}
-              style={{padding:'4px 11px',borderRadius:6,border:'none',cursor:'pointer',fontSize:12,fontWeight:500,background:origem===v?'#fff':'none'}}>{l}</button>
-          ))}
-        </div>
-      );
+      const origemLabel = origem==='all'?'todas as origens':grupoLabel(origem);
 
       if(!hasLeads) return (
         <div style={{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:10,padding:'14px 16px'}}>
@@ -560,140 +551,171 @@
         </div>
       );
 
-      const etapas=[
-        {nome:'Leads válidos',v:total,  cor:'#6366f1'},
-        {nome:'MQL ou +',     v:mqlMais,cor:'#8b5cf6'},
-        {nome:'SQL ou +',     v:sqlMais,cor:'#0ea5e9'},
-        {nome:'🏆 Ganho',     v:ganho,  cor:'#10b981'},
+      const ETAPAS=[
+        {k:'lead', nome:'Lead',  cor:'#6366f1'},
+        {k:'mql',  nome:'MQL',   cor:'#8b5cf6'},
+        {k:'sql',  nome:'SQL',   cor:'#0ea5e9'},
+        {k:'ganho',nome:'Ganho', cor:'#10b981'},
       ];
+      const Cell=({children,right,bold})=>(<td style={{padding:'8px 10px',textAlign:right?'right':'left',fontSize:12.5,fontFamily:right?'monospace':'Inter',fontWeight:bold?700:400,color:bold?'#0f172a':'#475569'}}>{children}</td>);
 
       return (
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
 
-          {/* contexto + filtro de origem */}
-          <div style={{display:'flex',flexWrap:'wrap',gap:10,alignItems:'center',justifyContent:'space-between',
-            background:'#fff',border:'1px solid #e2e8f0',borderRadius:10,padding:'10px 14px'}}>
+          {/* contexto + foco de origem */}
+          <div style={{display:'flex',flexWrap:'wrap',gap:10,alignItems:'center',justifyContent:'space-between',background:'#fff',border:'1px solid #e2e8f0',borderRadius:10,padding:'10px 14px'}}>
             <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-              <span style={{fontSize:11,fontWeight:700,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'.05em'}}>Origem:</span>
-              <PillOrigem/>
+              <span style={{fontSize:11,fontWeight:700,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'.05em'}}>Foco do resumo:</span>
+              <div style={{display:'inline-flex',background:'#f1f5f9',borderRadius:8,padding:3,gap:2,flexWrap:'wrap'}}>
+                {[['all','Todas'],['pago','🟥 Pago'],['organico','🟩 Orgânico'],['sem_origem','🟦 Sem origem'],['nao_classificada','⚪ Não class.']].map(([v,l])=>(
+                  <button key={v} onClick={()=>setOrigem(v)} className={origem===v?'pill-a':'pill-i'} style={{padding:'4px 10px',borderRadius:6,border:'none',cursor:'pointer',fontSize:12,fontWeight:500,background:origem===v?'#fff':'none'}}>{l}</button>
+                ))}
+              </div>
             </div>
-            <p style={{fontSize:11,color:'#94a3b8',margin:0}}>
-              Mostrando <b style={{color:'#475569'}}>{tipoLabel}</b> · <b style={{color:'#475569'}}>{origemLabel}</b> · {fmtDate(de)} – {fmtDate(ate)}
-            </p>
+            <p style={{fontSize:11,color:'#94a3b8',margin:0}}>Resumo: <b style={{color:'#475569'}}>{tipoLabel}</b> · <b style={{color:'#475569'}}>{origemLabel}</b> · {fmtDate(de)} – {fmtDate(ate)}</p>
           </div>
 
-          {/* KPIs principais */}
+          {/* KPIs */}
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:12}}>
-            <MetricCard title="Total de Leads" value={fmt(total)} sub={`${fmtDate(de)} – ${fmtDate(ate)}`} cor="indigo" icon={<IUsers/>} trend={momPct!==null?+momPct.toFixed(0):undefined}
-              info="Leads válidos (etiqueta CF/WL no CRM), sem duplicados (contato único por mês), respeitando o período e os filtros."/>
-            <MetricCard title="MQL ou superior" value={fmt(mqlMais)} sub={pct(total?mqlMais/total*100:0)+' dos leads'} cor="purple" icon={<IChart/>}
-              info="Contatos que chegaram pelo menos a MQL (inclui SQL e Ganho). MQL = etiqueta 7'MQL."/>
-            <MetricCard title="SQL ou superior" value={fmt(sqlMais)} sub={pct(total?sqlMais/total*100:0)+' dos leads'} cor="cyan" icon={<IChart/>}
-              info="Contatos que chegaram pelo menos a SQL (inclui Ganho). SQL = etiqueta 8'SQL ou Funil Comercial (SQL)."/>
-            <MetricCard title="🏆 Ganho" value={fmt(ganho)} sub={pct(taxaGanho)+' de fechamento'} cor="green" icon={<IUsers/>}
-              info="Negócios ganhos (Etapa no CRM = 6. Ganho). Taxa de fechamento = Ganho ÷ Total de leads do recorte."/>
+            <MetricCard title="Total de Leads" value={fmt(F.total)} sub={`${fmtDate(de)} – ${fmtDate(ate)}`} cor="indigo" icon={<IUsers/>} info="Contatos únicos válidos por mês (Data de Criação do Card), após exclusões e deduplicação por Nome do contato. Respeita período/tipo/foco."/>
+            <MetricCard title="Cliente Final" value={fmt(cfA.total)} sub={pct(F.total?cfA.total/(cfA.total+wlA.total)*100:0)+' do total'} cor="indigo" icon={<IUsers/>} info="Tipo = Cliente Final. Regra: quem NÃO tem a etiqueta 4'LEAD P WHITE LABEL (ou tem WL + CF juntos) é Cliente Final."/>
+            <MetricCard title="White Label" value={fmt(wlA.total)} sub={pct(F.total?wlA.total/(cfA.total+wlA.total)*100:0)+' do total'} cor="amber" icon={<IWL/>} info="Tipo = White Label. Só com a etiqueta 4'LEAD P WHITE LABEL e SEM etiqueta de Cliente Final."/>
+            <MetricCard title="🏆 Ganho" value={fmt(F.ganho)} sub={pct(taxaGanho)+' de fechamento'} cor="green" icon={<IUsers/>} info="Etapa no CRM = 6. Ganho. Taxa = Ganho ÷ Total de leads do recorte."/>
           </div>
 
-          {/* Perdido — discreto */}
-          {tipo==='all' && perdido>0 && (
-            <div style={{fontSize:11.5,color:'#94a3b8',display:'flex',alignItems:'center',gap:7,marginTop:-6}}>
-              <span style={{width:8,height:8,borderRadius:'50%',background:'#cbd5e1',display:'inline-block'}}/>
-              Perdidos no período: <b style={{color:'#64748b'}}>{fmt(perdido)}</b>
-              {(ganho+perdido)>0 && <span> — {pct(ganho/(ganho+perdido)*100)} de aproveitamento (Ganho ÷ casos decididos)</span>}
-            </div>
-          )}
-
-          {/* Funil acumulado */}
-          <Bloco titulo="Funil de conversão" sub={`${tipoLabel} · ${origemLabel}`}
-            info="Funil acumulado: cada etapa inclui quem avançou além dela. Lê-se Leads → MQL+ → SQL+ → Ganho.">
+          {/* Funil por etapa (ÚNICA — não acumulado) */}
+          <Bloco titulo="Distribuição por etapa do funil" sub={`Etapa única (não acumulado) · ${tipoLabel} · ${origemLabel} · soma = ${fmt(F.total)}`}
+            info="Cada contato entra em UMA etapa final (prioridade Ganho > SQL > MQL > Lead). Lead + MQL + SQL + Ganho = Total.">
             <div style={{display:'flex',flexDirection:'column',gap:9}}>
-              {etapas.map((e,i)=>{
-                const w = total? Math.max(3, e.v/total*100):0;
-                const convPrev = i>0 && etapas[i-1].v>0 ? e.v/etapas[i-1].v*100 : null;
-                return (
-                  <div key={e.nome} style={{display:'flex',alignItems:'center',gap:12}}>
-                    <div style={{width:104,fontSize:12,fontWeight:600,color:'#475569',textAlign:'right',flexShrink:0}}>{e.nome}</div>
-                    <div style={{flex:1,background:'#f1f5f9',borderRadius:8,height:30,overflow:'hidden'}}>
-                      <div style={{width:w+'%',height:'100%',background:e.cor,borderRadius:8,transition:'width .4s',
-                        display:'flex',alignItems:'center',paddingLeft:11,minWidth:54}}>
-                        <span style={{fontSize:12.5,fontWeight:800,color:'#fff'}}>{fmt(e.v)}</span>
-                      </div>
-                    </div>
-                    <div style={{width:140,flexShrink:0,lineHeight:1.25}}>
-                      <div style={{fontSize:11.5,color:'#475569',fontWeight:600}}>{pct(total?e.v/total*100:0)} <span style={{fontSize:9,color:'#94a3b8',fontWeight:400}}>do total</span></div>
-                      {convPrev!==null && <div style={{fontSize:10,color:'#94a3b8'}}>↳ {pct(convPrev)} da etapa anterior</div>}
+              {ETAPAS.map(e=>{ const v=F[e.k]; const w=F.total?Math.max(2,v/F.total*100):0; return (
+                <div key={e.k} style={{display:'flex',alignItems:'center',gap:12}}>
+                  <div style={{width:60,fontSize:12,fontWeight:600,color:'#475569',textAlign:'right',flexShrink:0}}>{e.nome}</div>
+                  <div style={{flex:1,background:'#f1f5f9',borderRadius:8,height:28,overflow:'hidden'}}>
+                    <div style={{width:w+'%',height:'100%',background:e.cor,borderRadius:8,transition:'width .4s',display:'flex',alignItems:'center',paddingLeft:10,minWidth:46}}>
+                      <span style={{fontSize:12,fontWeight:800,color:'#fff'}}>{fmt(v)}</span>
                     </div>
                   </div>
-                );
-              })}
+                  <div style={{width:54,fontSize:11.5,color:'#475569',fontWeight:600,flexShrink:0}}>{pct(F.total?v/F.total*100:0)}</div>
+                </div>
+              ); })}
             </div>
           </Bloco>
 
-          {/* CF vs WL */}
+          {/* CF × WL */}
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))',gap:12}}>
-            {[{lab:'Cliente Final',a:cfA,cor:'#6366f1',ic:<IUsers/>},{lab:'White Label',a:wlA,cor:'#f59e0b',ic:<IWL/>}].map(({lab,a,cor,ic})=>{
-              const mm=a.mql+a.sql+a.ganho, sm=a.sql+a.ganho;
-              return (
-                <div key={lab} className="card" style={{padding:18}}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-                    <div style={{display:'flex',alignItems:'center',gap:8}}>
-                      <span style={{background:cor+'22',color:cor,padding:7,borderRadius:8,display:'flex'}}>{ic}</span>
-                      <span style={{fontSize:13,fontWeight:700,color:'#1e293b'}}>{lab}</span>
-                    </div>
-                    <span style={{fontSize:22,fontWeight:800,color:'#0f172a'}}>{fmt(a.total)}</span>
-                  </div>
-                  <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:6}}>
-                    {[['MQL+',mm,'#7c3aed','#f5f3ff'],['SQL+',sm,'#0e7490','#ecfeff'],['Ganho',a.ganho,'#047857','#ecfdf5']].map(([st,n,tc,bg])=>(
-                      <div key={st} style={{textAlign:'center',padding:'8px 4px',background:bg,borderRadius:8}}>
-                        <p style={{fontSize:9,fontWeight:700,color:tc,textTransform:'uppercase',letterSpacing:'.05em',margin:'0 0 3px'}}>{st}</p>
-                        <p style={{fontSize:18,fontWeight:800,color:'#0f172a',margin:0}}>{fmt(n)}</p>
-                        <p style={{fontSize:10,color:'#94a3b8',margin:'2px 0 0'}}>{pct(a.total?n/a.total*100:0)}</p>
-                      </div>
-                    ))}
-                  </div>
+            {[{lab:'Cliente Final',a:cfA,cor:'#6366f1',ic:<IUsers/>},{lab:'White Label',a:wlA,cor:'#f59e0b',ic:<IWL/>}].map(({lab,a,cor,ic})=>(
+              <div key={lab} className="card" style={{padding:18}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+                  <div style={{display:'flex',alignItems:'center',gap:8}}><span style={{background:cor+'22',color:cor,padding:7,borderRadius:8,display:'flex'}}>{ic}</span><span style={{fontSize:13,fontWeight:700,color:'#1e293b'}}>{lab}</span></div>
+                  <span style={{fontSize:22,fontWeight:800,color:'#0f172a'}}>{fmt(a.total)}</span>
                 </div>
-              );
-            })}
+                <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6}}>
+                  {[['Lead',a.lead,'#4338ca','#eef2ff'],['MQL',a.mql,'#7c3aed','#f5f3ff'],['SQL',a.sql,'#0e7490','#ecfeff'],['Ganho',a.ganho,'#047857','#ecfdf5']].map(([st,n,tc,bg])=>(
+                    <div key={st} style={{textAlign:'center',padding:'8px 3px',background:bg,borderRadius:8}}>
+                      <p style={{fontSize:9,fontWeight:700,color:tc,textTransform:'uppercase',margin:'0 0 3px'}}>{st}</p>
+                      <p style={{fontSize:17,fontWeight:800,color:'#0f172a',margin:0}}>{fmt(n)}</p>
+                      <p style={{fontSize:9,color:'#94a3b8',margin:'2px 0 0'}}>{pct(a.total?n/a.total*100:0)}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
 
-          {/* Origem: donut + tabela cruzada */}
+          {/* Por canal: donut + tabela canal × etapa */}
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))',gap:12}}>
-            <Bloco titulo="Leads por origem" sub="Pago · Orgânico · Sem origem"
-              csvDados={porGrupo.map(g=>({origem:g.label,leads:g.total,mql_mais:g.mqlMais,sql_mais:g.sqlMais,ganho:g.ganho,taxa_ganho:g.taxa.toFixed(1)+'%'}))} csvNome="leads-por-origem.csv"
-              info="Origem definida por Origem/Campanha/Anúncio. Sem origem = os 3 vazios. (Este gráfico mostra sempre os 3 grupos — ignora o filtro de origem acima.)">
-              <DonutChart data={origemPie} h={220}/>
+            <Bloco titulo="Leads por canal de origem" sub="Pago · Orgânico · Sem origem · Não class." csvDados={porCanal.map(g=>({canal:g.label,leads:g.total,lead:g.lead,mql:g.mql,sql:g.sql,ganho:g.ganho}))} csvNome="leads-por-canal.csv"
+              info="Origem por Origem/Campanha/Anúncio. Mostra sempre os 4 canais (respeita período/tipo, ignora o foco).">
+              <DonutChart data={canalPie} h={220}/>
             </Bloco>
-            <Bloco titulo="Funil por origem" sub="Quantos viram MQL, SQL e Ganho em cada origem"
-              info="Funil acumulado dentro de cada origem. Taxa = Ganho ÷ Leads daquela origem.">
-              <Tabela cols={[{label:'Origem'},{label:'Leads',right:true},{label:'MQL+',right:true},{label:'SQL+',right:true},{label:'Ganho',right:true},{label:'Taxa',right:true}]}
-                rows={porGrupo} renderRow={(g)=>(
+            <Bloco titulo="Funil por canal" sub="Cada etapa (única) dentro de cada canal" info="Lead/MQL/SQL/Ganho exclusivos por canal. Taxa = Ganho ÷ leads do canal.">
+              <Tabela cols={[{label:'Canal'},{label:'Leads',right:true},{label:'Lead',right:true},{label:'MQL',right:true},{label:'SQL',right:true},{label:'Ganho',right:true},{label:'Taxa',right:true}]}
+                rows={porCanal} renderRow={(g)=>(
                   <>
                     <Td><span style={{display:'inline-flex',alignItems:'center',gap:6}}><span style={{width:9,height:9,borderRadius:'50%',background:g.cor,display:'inline-block'}}/>{g.label}</span></Td>
-                    <Td right bold>{fmt(g.total)}</Td>
-                    <Td right mono>{fmt(g.mqlMais)}</Td>
-                    <Td right mono>{fmt(g.sqlMais)}</Td>
-                    <Td right mono>{fmt(g.ganho)}</Td>
-                    <Td right><span className={g.taxa>=10?'badge-green':g.taxa>=5?'badge-amber':'badge-gray'}>{pct(g.taxa)}</span></Td>
+                    <Td right bold>{fmt(g.total)}</Td><Td right mono>{fmt(g.lead)}</Td><Td right mono>{fmt(g.mql)}</Td><Td right mono>{fmt(g.sql)}</Td><Td right mono>{fmt(g.ganho)}</Td>
+                    <Td right><span className={g.total&&g.ganho/g.total>=0.1?'badge-green':'badge-gray'}>{pct(g.total?g.ganho/g.total*100:0)}</span></Td>
                   </>
                 )}/>
             </Bloco>
           </div>
 
-          {/* Evolução mensal */}
-          {evoLabels.length>1 && (
-            <Bloco titulo="Evolução de leads por mês" sub="Volume por origem ao longo do período"
-              info="Total de leads por mês (Data de Criação do Card), empilhado por origem.">
-              <BarChart2 stacked labels={evoLabels} datasets={[
-                {label:'Pago / Ads',data:evoData('pago'),backgroundColor:'#ef4444'},
-                {label:'Orgânico',data:evoData('organico'),backgroundColor:'#10b981'},
-                {label:'Sem origem',data:evoData('sem_origem'),backgroundColor:'#6366f1'},
+          {/* Visão Geral mensal */}
+          <Bloco titulo="Visão geral mensal" sub="Total · tipo · etapa · canal — por mês (Data de Criação do Card)"
+            csvDados={mesesP.map(m=>({mes:m.mes,total:m.total,cliente_final:m.cf,white_label:m.wl,lead:m.lead,mql:m.mql,sql:m.sql,ganho:m.ganho,pago:m.pago,organico:m.organico,sem_origem:m.sem_origem,nao_classificada:m.nao_classificada}))} csvNome="visao-geral-mensal.csv"
+            info="Visão completa (todos os tipos/origens) por mês.">
+            <div style={{overflowX:'auto'}}>
+              <table style={{width:'100%',borderCollapse:'collapse',whiteSpace:'nowrap'}}>
+                <thead><tr style={{borderBottom:'2px solid #f1f5f9'}}>
+                  {['Mês','Total','CF','WL','Lead','MQL','SQL','Ganho','Pago','Orgân.','Sem orig.','Não cl.'].map((h,i)=>(
+                    <th key={i} style={{padding:'8px 10px',fontSize:10,fontWeight:700,color:'#94a3b8',textTransform:'uppercase',textAlign:i===0?'left':'right'}}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {mesesP.map((m,i)=>(
+                    <tr key={i} style={{borderBottom:'1px solid #f8fafc'}}>
+                      <Cell bold>{m.mes}</Cell><Cell right bold>{fmt(m.total)}</Cell><Cell right>{fmt(m.cf)}</Cell><Cell right>{fmt(m.wl)}</Cell>
+                      <Cell right>{fmt(m.lead)}</Cell><Cell right>{fmt(m.mql)}</Cell><Cell right>{fmt(m.sql)}</Cell><Cell right>{fmt(m.ganho)}</Cell>
+                      <Cell right>{fmt(m.pago)}</Cell><Cell right>{fmt(m.organico)}</Cell><Cell right>{fmt(m.sem_origem)}</Cell><Cell right>{fmt(m.nao_classificada||0)}</Cell>
+                    </tr>
+                  ))}
+                  <tr style={{borderTop:'2px solid #e2e8f0',background:'#f8fafc'}}>
+                    <Cell bold>Total</Cell><Cell right bold>{fmt(T.total||0)}</Cell><Cell right bold>{fmt(T.cf||0)}</Cell><Cell right bold>{fmt(T.wl||0)}</Cell>
+                    <Cell right bold>{fmt(T.lead||0)}</Cell><Cell right bold>{fmt(T.mql||0)}</Cell><Cell right bold>{fmt(T.sql||0)}</Cell><Cell right bold>{fmt(T.ganho||0)}</Cell>
+                    <Cell right bold>{fmt(T.pago||0)}</Cell><Cell right bold>{fmt(T.organico||0)}</Cell><Cell right bold>{fmt(T.sem_origem||0)}</Cell><Cell right bold>{fmt(T.nao_classificada||0)}</Cell>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </Bloco>
+
+          {/* Evolução mensal por etapa */}
+          {mesesP.length>1 && (
+            <Bloco titulo="Evolução por etapa (mês a mês)" sub="Distribuição de etapa única ao longo do período" info="Empilhado por etapa — a altura total é o nº de leads do mês.">
+              <BarChart2 stacked labels={mesesP.map(m=>m.mes)} datasets={[
+                {label:'Lead', data:mesesP.map(m=>m.lead), backgroundColor:'#6366f1'},
+                {label:'MQL',  data:mesesP.map(m=>m.mql),  backgroundColor:'#8b5cf6'},
+                {label:'SQL',  data:mesesP.map(m=>m.sql),  backgroundColor:'#0ea5e9'},
+                {label:'Ganho',data:mesesP.map(m=>m.ganho),backgroundColor:'#10b981'},
               ]} h={270}/>
             </Bloco>
           )}
 
+          {/* Visão White Label */}
+          <Bloco titulo="🏢 Visão White Label" sub="Foco nos leads White Label — etapa e canal" info="Recorte só dos contatos classificados como White Label, no período.">
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:10,marginBottom:16}}>
+              {[['Total WL',wlA.total,'#0f172a'],['Lead',wlA.lead,'#6366f1'],['MQL',wlA.mql,'#8b5cf6'],['SQL',wlA.sql,'#0ea5e9'],['Ganho',wlA.ganho,'#10b981']].map(([l,v,c])=>(
+                <div key={l} style={{background:'#f8fafc',borderRadius:9,padding:'10px 12px',textAlign:'center'}}>
+                  <p style={{fontSize:10,fontWeight:700,color:'#94a3b8',textTransform:'uppercase',margin:'0 0 3px'}}>{l}</p>
+                  <p style={{fontSize:19,fontWeight:800,color:c,margin:0}}>{fmt(v)}</p>
+                </div>
+              ))}
+            </div>
+            <p style={{fontSize:11,fontWeight:700,color:'#94a3b8',textTransform:'uppercase',margin:'0 0 8px'}}>Origem/canal de cada etapa (White Label)</p>
+            <Tabela cols={[{label:'Canal'},{label:'WL Lead',right:true},{label:'WL MQL',right:true},{label:'WL SQL',right:true},{label:'WL Ganho',right:true},{label:'Total',right:true}]}
+              rows={wlPorCanal} renderRow={(g)=>(
+                <>
+                  <Td><span style={{display:'inline-flex',alignItems:'center',gap:6}}><span style={{width:9,height:9,borderRadius:'50%',background:g.cor,display:'inline-block'}}/>{g.label}</span></Td>
+                  <Td right mono>{fmt(g.lead)}</Td><Td right mono>{fmt(g.mql)}</Td><Td right mono>{fmt(g.sql)}</Td><Td right mono>{fmt(g.ganho)}</Td><Td right bold>{fmt(g.total)}</Td>
+                </>
+              )}/>
+          </Bloco>
+
+          {/* Conferências */}
+          <Bloco titulo="✔️ Conferência dos totais" sub="Validação de fechamento (período inteiro, todos os tipos)">
+            <div style={{display:'flex',flexDirection:'column',gap:8}}>
+              {conf.map((c,i)=>{ const ok=c.a===c.b; return (
+                <div key={i} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,background:ok?'#f0fdf4':'#fef2f2',border:'1px solid '+(ok?'#bbf7d0':'#fecaca'),borderRadius:9,padding:'9px 12px'}}>
+                  <span style={{fontSize:12.5,color:ok?'#166534':'#991b1b',fontWeight:500}}>{ok?'✓':'✗'} {c.nome}</span>
+                  <span style={{fontSize:12.5,fontFamily:'monospace',color:ok?'#166534':'#991b1b',fontWeight:700}}>{fmt(c.a)} = {fmt(c.b)}</span>
+                </div>
+              ); })}
+            </div>
+          </Bloco>
+
           {/* Insights */}
           {ins.length>0 && (
-            <Bloco titulo="💡 Insights automáticos" sub="Leitura dos dados no recorte atual">
+            <Bloco titulo="💡 Insights automáticos" sub="Leitura dos dados no período">
               <div style={{display:'flex',flexDirection:'column',gap:8}}>
                 {ins.map((x,i)=>(
                   <div key={i} style={{display:'flex',gap:10,alignItems:'flex-start',background:x.bg,border:'1px solid '+x.bd,borderRadius:9,padding:'10px 12px'}}>
@@ -708,13 +730,13 @@
           {/* Leads recentes */}
           {recentes.length>0 && (
             <Bloco titulo="Leads recentes" sub={`${fmt(recentes.length)} contatos no recorte (mostrando até 25)`}>
-              <Tabela cols={[{label:'Nome'},{label:'Origem'},{label:'Tipo'},{label:'Etapa'},{label:'Data',right:true}]}
+              <Tabela cols={[{label:'Nome'},{label:'Canal'},{label:'Tipo'},{label:'Etapa'},{label:'Data',right:true}]}
                 rows={recentes.slice(0,25)} renderRow={(l)=>(
                   <>
                     <Td bold>{l.nome||'—'}</Td>
                     <Td>{l.canal}</Td>
                     <Td><span className={l.tipo==='white_label'?'badge-amber':'badge-indigo'}>{l.tipo==='white_label'?'White Label':'Cliente Final'}</span></Td>
-                    <Td><span className={l.isGanho?'badge-green':(l.isSql||l.isMql)?'badge-indigo':'badge-gray'}>{l.isGanho?'GANHO':l.isSql?'SQL':l.isMql?'MQL':'LEAD'}{l.isPerdido?' · perdido':''}</span></Td>
+                    <Td><span className={l.isGanho?'badge-green':(l.isSql||l.isMql)?'badge-indigo':'badge-gray'}>{l.isGanho?'GANHO':l.isSql?'SQL':l.isMql?'MQL':'LEAD'}</span></Td>
                     <Td right>{l.data}</Td>
                   </>
                 )}/>
@@ -2887,11 +2909,13 @@
 
     // Período inicial: últimos 30 dias
     const makeDate=(diasAtras)=>{ const d=new Date(TODAY); d.setDate(d.getDate()-diasAtras); return d; };
+    // 1º dia do mês N meses atrás (recortes mensais) — mesInicio(2) = início de 3 meses atrás contando o atual
+    const mesInicio=(mesesAtras)=>{ const d=new Date(TODAY); d.setMonth(d.getMonth()-mesesAtras, 1); d.setHours(0,0,0,0); return d; };
 
     const App=()=>{
       const [aba,setAba]=useState('leads');
       const [tipo,setTipo]=useState('all');
-      const [de,setDe]=useState(makeDate(30));
+      const [de,setDe]=useState(mesInicio(2));   // abre nos últimos 3 meses (Abr–Jun)
       const [ate,setAte]=useState(TODAY);
       const [showCal,setShowCal]=useState(false);
       const [api,setApi]=useState(null);
@@ -2922,6 +2946,7 @@
         {l:'7 dias', fn:()=>{ setDe(makeDate(7));  setAte(TODAY); setShowCal(false); }},
         {l:'30 dias',fn:()=>{ setDe(makeDate(30)); setAte(TODAY); setShowCal(false); }},
         {l:'90 dias',fn:()=>{ setDe(makeDate(90)); setAte(TODAY); setShowCal(false); }},
+        {l:'3 meses',fn:()=>{ setDe(mesInicio(2)); setAte(TODAY); setShowCal(false); }},
         {l:'Este mês',fn:()=>{ const d=new Date(TODAY); d.setDate(1); setDe(d); setAte(TODAY); setShowCal(false); }},
         {l:'Ano atual',fn:()=>{ const d=new Date(TODAY); d.setMonth(0,1); setDe(d); setAte(TODAY); setShowCal(false); }},
       ];
