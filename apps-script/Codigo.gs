@@ -109,6 +109,8 @@ function buscarLeads() {
       'CENTRAL DE ATENDIMENTO E CRM WHITE LABEL PARA WHATSAPP','CRM WHITE LABEL PARA WHATSAPP',
       'TESTE GRÁTIS - HELENACRM','QUERO CONHECER A PARCERIA WHITE LABEL DA HELENACRM',
       'PLANOS','DEMONSTRAÇÃO HELENA','MANUAL DA API OFICIAL','CRM INTEGRADO COM WHATSAPP',
+      // adicionados após revisão do Arthur (jun/2026) — eram "não classificada", confirmados orgânicos:
+      'QUERO RECEBER MEU LINK DO TESTE GRÁTIS','AGENTES DE IA PARA WHATSAPP','EZEN',
     ];
     const classificarOrigem = (origemR, campanhaR, anuncioR) => {
       const o=(origemR||'').toUpperCase().trim();
