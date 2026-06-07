@@ -132,10 +132,12 @@ function buscarLeads() {
       const tipo = isWl ? 'white_label' : 'cliente_final';
 
       // etapa do funil — prioridade Ganho > SQL > MQL > Lead
+      // MQL = SÓ pela etiqueta 7'MQL. Estar no "Funil Parceiros (Qualificação)" NÃO basta,
+      // porque esse funil também contém os Lead Frio (que devem ficar como Lead).
       const isGanho = etapa.includes('ganho');
-      const isSql   = etq.includes("8'sql") || funil.includes('(sql)')     || funil.includes('comercial');
-      const isMql   = etq.includes("7'mql") || funil.includes('qualifica') || funil.includes('parceiros');
-      const stage   = isGanho ? 'ganho' : isSql ? 'sql' : isMql ? 'mql' : 'lead';
+      const isSql   = etq.includes("8'sql") || funil.includes('(sql)') || funil.includes('comercial');
+      const isMql   = etq.includes("7'mql");
+      const stage   = isGanho ? 'ganho' : isSql ? 'sql' : isMql ? 'mql' : 'lead';  // Lead = 6'Lead Frio ou sem tag de qualificação
       const perdido = etapa.includes('perdido') && !isGanho;
 
       // origem — 3 grupos
