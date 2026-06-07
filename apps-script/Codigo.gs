@@ -95,10 +95,36 @@ function buscarLeads() {
     const iCampanha  = col('campanha');
 
     const STAGE_RANK = { lead:1, mql:2, sql:3, ganho:4 };
-    const GRUPO_RANK = { sem_origem:1, organico:2, pago:3 };
-    const labelGrupo = g => g === 'sem_origem' ? 'Sem origem de conversão'
-                          : g === 'pago'       ? 'Pago / Ads'
-                          :                      'Orgânico identificado';
+    const GRUPO_RANK = { sem_origem:1, nao_classificada:2, organico:3, pago:4 };
+    const labelGrupo = g => g === 'sem_origem'       ? 'Sem origem de conversão'
+                          : g === 'pago'             ? 'Pago / Ads'
+                          : g === 'organico'         ? 'Orgânico identificado'
+                          :                            'Origem rastreada não classificada';
+
+    // ── classificação de origem em 4 baldes (Pago / Orgânico / Sem origem / Não classificada) ──
+    const PAGAS_ORIGEM    = ['METAADS','FACEBOOK','INSTAGRAM','IG','META','AD','GOOGLEADS'];
+    const ORGANICA_ORIGEM = ['WIDGET','LINKTREE','CHATGPT.COM','SITE'];
+    const ORGANICA_CONTEUDO = [
+      'HELENACRM | PLATAFORMA DE CRM PARA WHATSAPP','HELENACRM / PLATAFORMA',
+      'CENTRAL DE ATENDIMENTO E CRM WHITE LABEL PARA WHATSAPP','CRM WHITE LABEL PARA WHATSAPP',
+      'TESTE GRÁTIS - HELENACRM','QUERO CONHECER A PARCERIA WHITE LABEL DA HELENACRM',
+      'PLANOS','DEMONSTRAÇÃO HELENA','MANUAL DA API OFICIAL','CRM INTEGRADO COM WHATSAPP',
+    ];
+    const classificarOrigem = (origemR, campanhaR, anuncioR) => {
+      const o=(origemR||'').toUpperCase().trim();
+      const c=(campanhaR||'').toUpperCase().trim();
+      const a=(anuncioR||'').toUpperCase().trim();
+      if (!o && !c && !a) return 'sem_origem';                       // nada de origem/campanha/anúncio
+      const campanhaPaga =
+        /(^|[^A-Z])WL2?($|[^A-Z])/.test(c) || /WL\s*#/.test(c) ||    // WL, WL2, WL #
+        c.indexOf('SITE_SM_IG')>=0 || c.indexOf('SITE_INT')>=0 ||
+        c.indexOf('IG_SD')>=0 || c.indexOf('IG_CAP')>=0 || /AG\s*#/.test(c) ||
+        /^\d{6,}$/.test(c) || /^\d{6,}$/.test(a);                    // IDs numéricos de campanha/anúncio
+      if (PAGAS_ORIGEM.indexOf(o)>=0 || campanhaPaga) return 'pago';
+      const ehConteudo = ORGANICA_CONTEUDO.some(p => c.indexOf(p)>=0 || a.indexOf(p)>=0 || o.indexOf(p)>=0);
+      if (ORGANICA_ORIGEM.indexOf(o)>=0 || ehConteudo) return 'organico';  // GOOGLE só é orgânico se casar conteúdo (acima)
+      return 'nao_classificada';                                     // tem rastro mas não encaixou → revisão
+    };
 
     /* ── 1ª passada: monta registros válidos (já com exclusões) ── */
     const registros = [];
@@ -118,18 +144,19 @@ function buscarLeads() {
       const anuncio   = iAnuncio   >= 0 ? String(row[iAnuncio]   || '').trim() : '';
       const campanha  = iCampanha  >= 0 ? String(row[iCampanha]  || '').trim() : '';
 
-      // tipo: precisa de etiqueta de lead reconhecida (WL ou CF)
-      const isWl = etq.includes("4'lead p white label");
-      const isCf = etq.includes('lead cliente final');
-      if (!isWl && !isCf) continue;
-
-      // exclusões da base válida
+      // ── exclusões da base válida ──
       if (etq.includes('lead falso'))   continue;  // LEAD FALSO
-      if (/\bcs\s*-/.test(etq))         continue;  // CS - <responsável>
+      if (/\bcs\s*-/.test(etq))         continue;  // CS - <responsável> (já é cliente)
       if (etq.includes('helena talks')) continue;  // HELENA TALKS / SP
-      if (/\bvagas?\b/.test(etq))       continue;  // VAGA / VAGAS
+      // vaga: olhar etiqueta + origem + campanha + anúncio (VAGA / VAGAS / VAGAS_BH)
+      const blobVaga = (etq + ' ' + origem + ' ' + campanha + ' ' + anuncio).toLowerCase();
+      if (/\bvaga/.test(blobVaga)) continue;
 
-      const tipo = isWl ? 'white_label' : 'cliente_final';
+      // ── tipo de cliente: TODO contato válido conta.
+      //    WL só com 4'LEAD P WHITE LABEL e SEM etiqueta de Cliente Final; o resto é Cliente Final. ──
+      const temWlTag = etq.includes("4'lead p white label");
+      const temCfTag = etq.includes('cliente final');
+      const tipo = (temWlTag && !temCfTag) ? 'white_label' : 'cliente_final';
 
       // etapa do funil — prioridade Ganho > SQL > MQL > Lead
       // MQL = SÓ pela etiqueta 7'MQL. Estar no "Funil Parceiros (Qualificação)" NÃO basta,
@@ -140,18 +167,8 @@ function buscarLeads() {
       const stage   = isGanho ? 'ganho' : isSql ? 'sql' : isMql ? 'mql' : 'lead';  // Lead = 6'Lead Frio ou sem tag de qualificação
       const perdido = etapa.includes('perdido') && !isGanho;
 
-      // origem — 3 grupos
-      const c = campanha;
-      const isGoogle    = /google/i.test(origem);
-      const isInstagram = /instagram|ig\b/i.test(origem);
-      const isOrgOrigin = /linktree|chatgpt|weidget|widget/i.test(origem);
-      const isMetaCampaign = /^\d{8,}$/.test(c) || /_SM_|_IG_|_LP_|_INT\./i.test(c) || /^IA\/WL/i.test(c);
-      const isGooglePaid   = anuncio.length > 0 || /^WL\d*$/i.test(c) || /QUERO CONHECER A PARCERIA WHITE LABEL/i.test(c);
-      const isInstagramOrganic = isInstagram && (c.length === 0 || /^PLANOS$/i.test(c));
-      const isAd = !isOrgOrigin && !isInstagramOrganic && (isMetaCampaign || (isGoogle && isGooglePaid));
-
-      const temOrigem = origem !== '' || campanha !== '' || anuncio !== '';
-      const grupo = !temOrigem ? 'sem_origem' : (isAd ? 'pago' : 'organico');
+      // origem — 4 baldes (Pago / Orgânico / Sem origem / Não classificada)
+      const grupo = classificarOrigem(origem, campanha, anuncio);
 
       const mesKey = String(d.getFullYear()) + String(d.getMonth() + 1).padStart(2, '0');
       const mes    = d.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' })
@@ -186,7 +203,7 @@ function buscarLeads() {
     /* ── 3ª passada: agregações ── */
     const novo = extra => Object.assign({
       total:0, cf:0, wl:0, lead:0, mql:0, sql:0, ganho:0, perdido:0,
-      pago:0, organico:0, sem_origem:0,
+      pago:0, organico:0, sem_origem:0, nao_classificada:0,
       cf_lead:0, cf_mql:0, cf_sql:0, cf_ganho:0,
       wl_lead:0, wl_mql:0, wl_sql:0, wl_ganho:0,
     }, extra);
