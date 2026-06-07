@@ -3018,6 +3018,14 @@
               </div>
 
 
+              {/* Filtro de Tipo — aparece na aba Leads (é onde ele atua) */}
+              {aba==='leads' && (
+                <div style={{display:'flex',alignItems:'center',gap:7}}>
+                  <span style={{fontSize:11,fontWeight:700,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'.05em'}}>Tipo:</span>
+                  <Pill opts={TIPOS} val={tipo} set={setTipo}/>
+                </div>
+              )}
+
               <span style={{marginLeft:'auto',fontSize:11,color:'#cbd5e1'}}>
                 Atualizado: {api?.atualizado ? new Date(api.atualizado).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : fmtDate(TODAY)}
               </span>
