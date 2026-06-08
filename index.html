@@ -517,6 +517,11 @@
         {nome:'Total = Pago + Orgânico + Sem origem + Não class.', a:(T.pago||0)+(T.organico||0)+(T.sem_origem||0)+(T.nao_classificada||0), b:T.total||0},
       ];
 
+      // ── conversões por FLUXO (lente movimentação): quando viraram MQL/SQL/Ganho (respeita o tipo) ──
+      const convPick=(c,b)=> tipo==='cliente_final'?(c['cf_'+b]||0): tipo==='white_label'?(c['wl_'+b]||0):(c[b]||0);
+      const convData=(ld.conversoesPorMes||[]).map(c=>{ const mq=convPick(c,'mql'),sq=convPick(c,'sql'),gn=convPick(c,'ganho');
+        return { mes:c.mes, mesKey:c.mesKey, mql:mq, sql:sq, ganho:gn, total:mq+sq+gn }; });
+
       // ── leads recentes (data exata + tipo + foco) ──
       const parseData = s => { if(!s) return null; const [d,m,y]=s.split('/'); return new Date(+y,+m-1,+d); };
       const deT=de?new Date(de.getFullYear(),de.getMonth(),de.getDate()).getTime():null;
@@ -678,6 +683,26 @@
                 {label:'SQL',  data:mesesP.map(m=>m.sql),  backgroundColor:'#0ea5e9'},
                 {label:'Ganho',data:mesesP.map(m=>m.ganho),backgroundColor:'#10b981'},
               ]} h={270}/>
+            </Bloco>
+          )}
+
+          {/* Conversões por mês (por MOVIMENTAÇÃO / fluxo) */}
+          {convData.length>0 && (
+            <Bloco titulo="🔄 Conversões por mês (por movimentação)" sub={`Quando os leads viraram MQL/SQL/Ganho · ${tipoLabel}`}
+              info="Conta todo lead que avançou para MQL/SQL/Ganho NAQUELE mês (pela Data de Atualização do Card), mesmo que tenha sido criado antes. É o ritmo de conversão — diferente da visão por mês de criação acima.">
+              <BarChart2 stacked labels={convData.map(c=>c.mes)} datasets={[
+                {label:'MQL',  data:convData.map(c=>c.mql),  backgroundColor:'#8b5cf6'},
+                {label:'SQL',  data:convData.map(c=>c.sql),  backgroundColor:'#0ea5e9'},
+                {label:'Ganho',data:convData.map(c=>c.ganho),backgroundColor:'#10b981'},
+              ]} h={250}/>
+              <div style={{marginTop:14}}>
+                <Tabela cols={[{label:'Mês (movimentação)'},{label:'MQL',right:true},{label:'SQL',right:true},{label:'Ganho',right:true},{label:'Total',right:true}]}
+                  rows={convData} renderRow={(c)=>(
+                    <>
+                      <Td bold>{c.mes}</Td><Td right mono>{fmt(c.mql)}</Td><Td right mono>{fmt(c.sql)}</Td><Td right mono>{fmt(c.ganho)}</Td><Td right bold>{fmt(c.total)}</Td>
+                    </>
+                  )}/>
+              </div>
             </Bloco>
           )}
 
