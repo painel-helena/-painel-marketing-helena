@@ -85,7 +85,7 @@ function buscarLeads(deStr, ateStr) {
     const sheet = ss.getSheets().find(s => s.getSheetId() === LEADS_SHEET_GID) || ss.getSheets()[0];
     const data  = sheet.getDataRange().getValues();
     if (data.length < 2) {
-      return { total:0, cf:0, wl:0, porMes:[], porCanalMes:[], porCanal:[], porConteudo:[], recentes:[] };
+      return { total:0, cf:0, wl:0, porMes:[], porCanalMes:[], porCanal:[], porConteudo:[], recentes:[], conversoesPorMes:[] };
     }
 
     const header = data[0].map(h => String(h).toLowerCase().trim());
@@ -98,6 +98,7 @@ function buscarLeads(deStr, ateStr) {
     const iFunil     = col('funil/painel do crm');
     const iAnuncio   = col('anúncio');
     const iCampanha  = col('campanha');
+    const iMov       = col('data de atualização do card');  // última movimentação (p/ conversões por fluxo)
 
     const STAGE_RANK = { lead:1, mql:2, sql:3, ganho:4 };
     const GRUPO_RANK = { sem_origem:1, nao_classificada:2, organico:3, pago:4 };
@@ -141,8 +142,10 @@ function buscarLeads(deStr, ateStr) {
       if (!rawData) continue;
       const d = rawData instanceof Date ? rawData : new Date(rawData);
       if (isNaN(d.getTime())) continue;
-      if (ini && d < ini) continue;   // fora do período selecionado
-      if (fim && d > fim) continue;
+      // NÃO filtra por data aqui — cada lente (criação/movimentação) filtra na sua própria data.
+      let dMov = iMov >= 0 ? row[iMov] : null;        // última movimentação do card
+      dMov = dMov instanceof Date ? dMov : (dMov ? new Date(dMov) : d);
+      if (isNaN(dMov.getTime())) dMov = d;
 
       const nome      = iNome      >= 0 ? String(row[iNome]      || '').trim() : '';
       const origem    = iCanal     >= 0 ? String(row[iCanal]     || '').trim() : '';
@@ -179,35 +182,44 @@ function buscarLeads(deStr, ateStr) {
       // origem — 4 baldes (Pago / Orgânico / Sem origem / Não classificada)
       const grupo = classificarOrigem(origem, campanha, anuncio);
 
-      const mesKey = String(d.getFullYear()) + String(d.getMonth() + 1).padStart(2, '0');
-      const mes    = d.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' })
-                       .replace('.', '').replace(' de ', '/');
+      const mkOf  = dd => String(dd.getFullYear()) + String(dd.getMonth() + 1).padStart(2, '0');
+      const lblOf = dd => dd.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('.', '').replace(' de ', '/');
 
       registros.push({
         nomeKey: nome.toLowerCase().replace(/\s+/g, ' ').trim(),
         nome, tipo, stage, perdido, grupo,
         conteudo: campanha || anuncio || '',
-        anuncio, campanha, statusRaw, d, mesKey, mes,
+        anuncio, campanha, statusRaw,
+        d, mesKey: mkOf(d), mes: lblOf(d),                  // criação
+        dMov, mesKeyMov: mkOf(dMov), mesMov: lblOf(dMov),   // movimentação
       });
     }
 
-    /* ── 2ª passada: dedup por (mês + nome), mantendo etapa mais avançada ── */
-    const dedup = {};
-    let anon = 0;
-    registros.forEach(r => {
-      const key = r.nomeKey ? (r.mesKey + '|' + r.nomeKey) : (r.mesKey + '|__anon' + (anon++));
-      const ex = dedup[key];
-      if (!ex) { dedup[key] = r; return; }
-      const hi = STAGE_RANK[r.stage] > STAGE_RANK[ex.stage] ? r : ex;  // etapa mais avançada
-      const gw = GRUPO_RANK[r.grupo] >= GRUPO_RANK[ex.grupo] ? r : ex;  // origem mais informativa
-      dedup[key] = {
-        nomeKey: ex.nomeKey, nome: hi.nome, tipo: hi.tipo, stage: hi.stage,
-        perdido: (ex.perdido || r.perdido) && hi.stage !== 'ganho',
-        grupo: gw.grupo, conteudo: gw.conteudo, anuncio: gw.anuncio, campanha: gw.campanha,
-        statusRaw: hi.statusRaw, d: (ex.d > r.d ? ex.d : r.d), mesKey: ex.mesKey, mes: ex.mes,
-      };
-    });
-    const unicos = Object.values(dedup);
+    /* ── dedup reutilizável: agrupa por (mês + nome), mantém a etapa mais avançada ── */
+    const dedupPor = (regs, campoMes) => {
+      const map = {}; let anon = 0;
+      regs.forEach(r => {
+        const mk = r[campoMes];
+        const key = r.nomeKey ? (mk + '|' + r.nomeKey) : (mk + '|__anon' + (anon++));
+        const ex = map[key];
+        if (!ex) { map[key] = r; return; }
+        const hi = STAGE_RANK[r.stage] > STAGE_RANK[ex.stage] ? r : ex;  // etapa mais avançada
+        const gw = GRUPO_RANK[r.grupo] >= GRUPO_RANK[ex.grupo] ? r : ex;  // origem mais informativa
+        map[key] = {
+          nomeKey: ex.nomeKey, nome: hi.nome, tipo: hi.tipo, stage: hi.stage,
+          perdido: (ex.perdido || r.perdido) && hi.stage !== 'ganho',
+          grupo: gw.grupo, conteudo: gw.conteudo, anuncio: gw.anuncio, campanha: gw.campanha,
+          statusRaw: hi.statusRaw,
+          d: (ex.d > r.d ? ex.d : r.d), mesKey: ex.mesKey, mes: ex.mes,
+          dMov: (ex.dMov > r.dMov ? ex.dMov : r.dMov), mesKeyMov: ex.mesKeyMov, mesMov: ex.mesMov,
+        };
+      });
+      return Object.values(map);
+    };
+
+    // LENTE 1 — CRIAÇÃO (volume + CF/WL + funil): filtra por Data de Criação do Card, dedup por mês de criação
+    const regCriacao = registros.filter(r => (!ini || r.d >= ini) && (!fim || r.d <= fim));
+    const unicos = dedupPor(regCriacao, 'mesKey');
 
     /* ── 3ª passada: agregações ── */
     const novo = extra => Object.assign({
@@ -253,6 +265,25 @@ function buscarLeads(deStr, ateStr) {
       conteudo: r.conteudo, anuncio: r.anuncio, campanha: r.campanha, pago: r.grupo === 'pago',
     }));
 
+    /* ── LENTE 2 — MOVIMENTAÇÃO: conversões POR FLUXO (quando viraram MQL/SQL/Ganho) ──
+       Conta todo contato em MQL/SQL/Ganho cuja ÚLTIMA MOVIMENTAÇÃO (Data de Atualização do Card)
+       caiu no período — independente de quando foi criado. Dedup por (mês de movimentação + nome). ── */
+    const regConv = registros.filter(r =>
+      (r.stage === 'mql' || r.stage === 'sql' || r.stage === 'ganho') &&
+      (!ini || r.dMov >= ini) && (!fim || r.dMov <= fim));
+    const convMap = {};
+    dedupPor(regConv, 'mesKeyMov').forEach(r => {
+      if (!convMap[r.mesKeyMov]) convMap[r.mesKeyMov] = {
+        mesKey: r.mesKeyMov, mes: r.mesMov, total:0, mql:0, sql:0, ganho:0, cf:0, wl:0,
+        cf_mql:0, cf_sql:0, cf_ganho:0, wl_mql:0, wl_sql:0, wl_ganho:0,
+      };
+      const o = convMap[r.mesKeyMov];
+      o.total++; o[r.stage]++;
+      if (r.tipo === 'white_label') { o.wl++; o['wl_' + r.stage]++; }
+      else                          { o.cf++; o['cf_' + r.stage]++; }
+    });
+    const conversoesPorMes = Object.values(convMap).sort((a, b) => a.mesKey > b.mesKey ? 1 : -1);
+
     const result = {
       total, cf, wl,
       porMes:      Object.values(mesMap).sort((a, b) => a.mesKey > b.mesKey ? 1 : -1),
@@ -260,11 +291,12 @@ function buscarLeads(deStr, ateStr) {
       porCanal:    Object.values(canalMap).sort((a, b) => b.total - a.total),
       porConteudo: Object.values(conteudoMap).sort((a, b) => b.total - a.total).slice(0, 300),
       recentes,
+      conversoesPorMes,
     };
 
     const ttl = 1800;  // 30 min; chaves por período expiram sozinhas (não precisa limparCache p/ leads)
     const guardar = (k, v) => { try { cache.put(k + sfx, JSON.stringify(v), ttl); } catch (e) {} }; // best-effort (ignora blocos > 100KB)
-    guardar('leads_meta',        { total: result.total, cf: result.cf, wl: result.wl });
+    guardar('leads_meta',        { total: result.total, cf: result.cf, wl: result.wl, conversoesPorMes: result.conversoesPorMes });
     guardar('leads_porMes',      result.porMes);
     guardar('leads_porCanalMes', result.porCanalMes);
     guardar('leads_porCanal',    result.porCanal);
@@ -274,7 +306,7 @@ function buscarLeads(deStr, ateStr) {
 
   } catch (err) {
     Logger.log('Erro buscarLeads: ' + err.message);
-    return { erro: err.message, total:0, cf:0, wl:0, porMes:[], porCanalMes:[], porCanal:[], porConteudo:[], recentes:[] };
+    return { erro: err.message, total:0, cf:0, wl:0, porMes:[], porCanalMes:[], porCanal:[], porConteudo:[], recentes:[], conversoesPorMes:[] };
   }
 }
 
