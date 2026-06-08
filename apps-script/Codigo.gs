@@ -30,7 +30,7 @@ function doGet(e) {
       gsc:        buscarGSC(dias, deStr, ateStr),
       ga4:        buscarGA4(dias, deStr, ateStr),
       semrush:    buscarSEMrush(),
-      leads:      buscarLeads(),
+      leads:      buscarLeads(deStr, ateStr),
       atualizado: new Date().toISOString(),
     };
     output.setContent(JSON.stringify(dados));
@@ -56,14 +56,19 @@ function limparCache() {
            + funil prioridade Ganho > SQL > MQL > Lead
            + 3 grupos de origem: Pago / Ads · Orgânico identificado · Sem origem
 ═══════════════════════════════════════════════════════════════════ */
-function buscarLeads() {
+function buscarLeads(deStr, ateStr) {
+  // recorte por DATA exata (Data de Criação do Card) — day-level
+  const ini = deStr  ? new Date(deStr  + 'T00:00:00') : null;
+  const fim = ateStr ? new Date(ateStr + 'T23:59:59') : null;
+  const sfx = '_' + (deStr || 'ini') + '_' + (ateStr || 'fim');   // cache por período (expira sozinho)
+
   const cache = CacheService.getScriptCache();
-  const c0 = cache.get('leads_meta');
-  const c1 = cache.get('leads_porMes');
-  const c2 = cache.get('leads_porCanalMes');
-  const c3 = cache.get('leads_porCanal');
-  const c4 = cache.get('leads_porConteudo');
-  const c5 = cache.get('leads_recentes');
+  const c0 = cache.get('leads_meta'        + sfx);
+  const c1 = cache.get('leads_porMes'      + sfx);
+  const c2 = cache.get('leads_porCanalMes' + sfx);
+  const c3 = cache.get('leads_porCanal'    + sfx);
+  const c4 = cache.get('leads_porConteudo' + sfx);
+  const c5 = cache.get('leads_recentes'    + sfx);
   if (c0 && c1 && c2 && c3 && c4 && c5) {
     return {
       ...JSON.parse(c0),
@@ -136,6 +141,8 @@ function buscarLeads() {
       if (!rawData) continue;
       const d = rawData instanceof Date ? rawData : new Date(rawData);
       if (isNaN(d.getTime())) continue;
+      if (ini && d < ini) continue;   // fora do período selecionado
+      if (fim && d > fim) continue;
 
       const nome      = iNome      >= 0 ? String(row[iNome]      || '').trim() : '';
       const origem    = iCanal     >= 0 ? String(row[iCanal]     || '').trim() : '';
@@ -255,13 +262,14 @@ function buscarLeads() {
       recentes,
     };
 
-    const ttl = 3600;
-    cache.put('leads_meta',        JSON.stringify({ total: result.total, cf: result.cf, wl: result.wl }), ttl);
-    cache.put('leads_porMes',      JSON.stringify(result.porMes),      ttl);
-    cache.put('leads_porCanalMes', JSON.stringify(result.porCanalMes), ttl);
-    cache.put('leads_porCanal',    JSON.stringify(result.porCanal),    ttl);
-    cache.put('leads_porConteudo', JSON.stringify(result.porConteudo), ttl);
-    cache.put('leads_recentes',    JSON.stringify(result.recentes),    ttl);
+    const ttl = 1800;  // 30 min; chaves por período expiram sozinhas (não precisa limparCache p/ leads)
+    const guardar = (k, v) => { try { cache.put(k + sfx, JSON.stringify(v), ttl); } catch (e) {} }; // best-effort (ignora blocos > 100KB)
+    guardar('leads_meta',        { total: result.total, cf: result.cf, wl: result.wl });
+    guardar('leads_porMes',      result.porMes);
+    guardar('leads_porCanalMes', result.porCanalMes);
+    guardar('leads_porCanal',    result.porCanal);
+    guardar('leads_porConteudo', result.porConteudo);
+    guardar('leads_recentes',    result.recentes);
     return result;
 
   } catch (err) {
