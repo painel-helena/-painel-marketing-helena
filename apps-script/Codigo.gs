@@ -100,7 +100,7 @@ function buscarLeads(deStr, ateStr) {
     const iCampanha  = col('campanha');
     const iMov       = col('data de atualização do card');  // última movimentação (p/ conversões por fluxo)
 
-    const STAGE_RANK = { lead:1, mql:2, sql:3, ganho:4 };
+    const STAGE_RANK = { lead:1, mql:2, sql:3, perdido:4, ganho:5 };
     const GRUPO_RANK = { sem_origem:1, nao_classificada:2, organico:3, pago:4 };
     const labelGrupo = g => g === 'sem_origem'       ? 'Sem origem de conversão'
                           : g === 'pago'             ? 'Pago / Ads'
@@ -170,14 +170,17 @@ function buscarLeads(deStr, ateStr) {
       const temCfTag = etq.includes('cliente final');
       const tipo = (temWlTag && !temCfTag) ? 'white_label' : 'cliente_final';
 
-      // etapa do funil — prioridade Ganho > SQL > MQL > Lead
+      // etapa do funil — ÚNICA e final, prioridade Ganho / Perdido > SQL > MQL > Lead
+      // Ganho e Perdido vêm do campo "Etapa no CRM" (final do funil, excludentes entre si).
+      // Se o contato foi Perdido, conta como Perdido mesmo que tenha chegado a SQL/MQL antes.
       // MQL = SÓ pela etiqueta 7'MQL. Estar no "Funil Parceiros (Qualificação)" NÃO basta,
       // porque esse funil também contém os Lead Frio (que devem ficar como Lead).
-      const isGanho = etapa.includes('ganho');
-      const isSql   = etq.includes("8'sql") || funil.includes('(sql)') || funil.includes('comercial');
-      const isMql   = etq.includes("7'mql");
-      const stage   = isGanho ? 'ganho' : isSql ? 'sql' : isMql ? 'mql' : 'lead';  // Lead = 6'Lead Frio ou sem tag de qualificação
-      const perdido = etapa.includes('perdido') && !isGanho;
+      const isGanho   = etapa.includes('ganho');
+      const isPerdido = etapa.includes('perdido') && !isGanho;   // "Etapa no CRM" = 7. Perdido
+      const isSql     = etq.includes("8'sql") || funil.includes('(sql)') || funil.includes('comercial');
+      const isMql     = etq.includes("7'mql");
+      const stage     = isGanho ? 'ganho' : isPerdido ? 'perdido' : isSql ? 'sql' : isMql ? 'mql' : 'lead';
+      const perdido   = stage === 'perdido';
 
       // origem — 4 baldes (Pago / Orgânico / Sem origem / Não classificada)
       const grupo = classificarOrigem(origem, campanha, anuncio);
@@ -207,7 +210,7 @@ function buscarLeads(deStr, ateStr) {
         const gw = GRUPO_RANK[r.grupo] >= GRUPO_RANK[ex.grupo] ? r : ex;  // origem mais informativa
         map[key] = {
           nomeKey: ex.nomeKey, nome: hi.nome, tipo: hi.tipo, stage: hi.stage,
-          perdido: (ex.perdido || r.perdido) && hi.stage !== 'ganho',
+          perdido: hi.stage === 'perdido',
           grupo: gw.grupo, conteudo: gw.conteudo, anuncio: gw.anuncio, campanha: gw.campanha,
           statusRaw: hi.statusRaw,
           d: (ex.d > r.d ? ex.d : r.d), mesKey: ex.mesKey, mes: ex.mes,
@@ -225,13 +228,12 @@ function buscarLeads(deStr, ateStr) {
     const novo = extra => Object.assign({
       total:0, cf:0, wl:0, lead:0, mql:0, sql:0, ganho:0, perdido:0,
       pago:0, organico:0, sem_origem:0, nao_classificada:0,
-      cf_lead:0, cf_mql:0, cf_sql:0, cf_ganho:0,
-      wl_lead:0, wl_mql:0, wl_sql:0, wl_ganho:0,
+      cf_lead:0, cf_mql:0, cf_sql:0, cf_ganho:0, cf_perdido:0,
+      wl_lead:0, wl_mql:0, wl_sql:0, wl_ganho:0, wl_perdido:0,
     }, extra);
     const acumula = (o, r) => {
       o.total++; if ('count' in o) o.count++;
-      o[r.grupo]++; o[r.stage]++;
-      if (r.perdido) o.perdido++;
+      o[r.grupo]++; o[r.stage]++;   // stage agora inclui 'perdido' (etapa final excludente)
       if (r.tipo === 'white_label') { o.wl++; o['wl_' + r.stage]++; }
       else                          { o.cf++; o['cf_' + r.stage]++; }
     };
