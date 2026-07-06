@@ -50,14 +50,16 @@ function limparCache() {
 }
 
 /* ════════════════════════════════════════════════════════════════
-   LEADS — planilha Helena CRM  (classificação v2 — jun/2026)
-   Regras: base válida (exclui CS-, LEAD FALSO, VAGA(S), HELENA TALKS)
-           + dedup contato único por mês (chave = Nome do contato)
-           + funil prioridade Ganho > SQL > MQL > Lead
-           + 3 grupos de origem: Pago / Ads · Orgânico identificado · Sem origem
+   LEADS — planilha Helena CRM  (classificação v3 — jul/2026)
+   Data de ENTRADA = Data de Criação da Conversa (fallback: Data de Criação do Card).
+   Volume Gerado no Mês = contatos únicos/mês SEM CS e SEM Vagas (mantém Lead Falso, Helena Talks, Eventos).
+   Leads Válidos = Volume − Lead Falso  (base de Tipo / Jornada / Origem).
+   Dedup: nome normalizado (minúsculo, sem acento) + mês da Conversa.
+   Funil (etapa única): prioridade Ganho / Perdido > SQL > MQL > Lead.
+   Origem (5 grupos): Pago / Ads · Novos Canais (Helena Talks/Eventos) · Orgânico · Sem origem · Não classificada.
 ═══════════════════════════════════════════════════════════════════ */
 function buscarLeads(deStr, ateStr) {
-  // recorte por DATA exata (Data de Criação do Card) — day-level
+  // recorte por DATA exata (Data de Criação da Conversa) — day-level
   const ini = deStr  ? new Date(deStr  + 'T00:00:00') : null;
   const fim = ateStr ? new Date(ateStr + 'T23:59:59') : null;
   const sfx = '_' + (deStr || 'ini') + '_' + (ateStr || 'fim');   // cache por período (expira sozinho)
@@ -90,7 +92,8 @@ function buscarLeads(deStr, ateStr) {
 
     const header = data[0].map(h => String(h).toLowerCase().trim());
     const col = name => header.indexOf(name);
-    const iData      = col('data de criação do card');
+    const iDataConversa = col('data de criação da conversa');  // data principal de ENTRADA do contato
+    const iDataCard     = col('data de criação do card');       // fallback se não houver a da conversa
     const iNome      = col('nome do contato');
     const iCanal     = col('origem');
     const iEtiquetas = col('etiquetas');
@@ -101,15 +104,17 @@ function buscarLeads(deStr, ateStr) {
     const iMov       = col('data de atualização do card');  // última movimentação (p/ conversões por fluxo)
 
     const STAGE_RANK = { lead:1, mql:2, sql:3, perdido:4, ganho:5 };
-    const GRUPO_RANK = { sem_origem:1, nao_classificada:2, organico:3, pago:4 };
+    const GRUPO_RANK = { sem_origem:1, nao_classificada:2, organico:3, pago:4, novos_canais:5 };
     const labelGrupo = g => g === 'sem_origem'       ? 'Sem origem de conversão'
                           : g === 'pago'             ? 'Pago / Ads'
                           : g === 'organico'         ? 'Orgânico identificado'
+                          : g === 'novos_canais'     ? 'Novos Canais'
                           :                            'Origem rastreada não classificada';
 
     // ── classificação de origem em 4 baldes (Pago / Orgânico / Sem origem / Não classificada) ──
     const PAGAS_ORIGEM    = ['METAADS','FACEBOOK','INSTAGRAM','IG','META','AD','GOOGLEADS'];
     const ORGANICA_ORIGEM = ['WIDGET','LINKTREE','CHATGPT.COM','SITE'];
+    const NOVOS_CANAIS    = ['helena talks','evento'];   // Novos Canais (válidos): Helena Talks / Eventos / similares
     const ORGANICA_CONTEUDO = [
       'HELENACRM | PLATAFORMA DE CRM PARA WHATSAPP','HELENACRM / PLATAFORMA',
       'CENTRAL DE ATENDIMENTO E CRM WHITE LABEL PARA WHATSAPP','CRM WHITE LABEL PARA WHATSAPP',
@@ -118,15 +123,19 @@ function buscarLeads(deStr, ateStr) {
       // adicionados após revisão do Arthur (jun/2026) — eram "não classificada", confirmados orgânicos:
       'QUERO RECEBER MEU LINK DO TESTE GRÁTIS','AGENTES DE IA PARA WHATSAPP','EZEN',
     ];
-    const classificarOrigem = (origemR, campanhaR, anuncioR) => {
+    const classificarOrigem = (origemR, campanhaR, anuncioR, etqR) => {
+      // Novos Canais (Helena Talks / Eventos) — em origem, campanha, anúncio OU etiqueta; ANTES de "sem origem"
+      const blobNC = ((origemR||'')+' '+(campanhaR||'')+' '+(anuncioR||'')+' '+(etqR||'')).toLowerCase();
+      if (NOVOS_CANAIS.some(t => blobNC.indexOf(t) >= 0)) return 'novos_canais';
       const o=(origemR||'').toUpperCase().trim();
       const c=(campanhaR||'').toUpperCase().trim();
       const a=(anuncioR||'').toUpperCase().trim();
       if (!o && !c && !a) return 'sem_origem';                       // nada de origem/campanha/anúncio
+      const ca = c + ' ' + a;                                        // padrões de Ads em campanha + anúncio
       const campanhaPaga =
-        /(^|[^A-Z])WL2?($|[^A-Z])/.test(c) || /WL\s*#/.test(c) ||    // WL, WL2, WL #
-        c.indexOf('SITE_SM_IG')>=0 || c.indexOf('SITE_INT')>=0 ||
-        c.indexOf('IG_SD')>=0 || c.indexOf('IG_CAP')>=0 || /AG\s*#/.test(c) ||
+        /(^|[^A-Z])WL2?($|[^A-Z])/.test(ca) || /WL\s*#/.test(ca) || /WL-/.test(ca) || /AG\s*#/.test(ca) ||
+        ca.indexOf('SITE_SM')>=0 || ca.indexOf('SITE_INT')>=0 || ca.indexOf('LP_SM')>=0 ||
+        ca.indexOf('WL_IG')>=0 || ca.indexOf('IG_SD')>=0 || ca.indexOf('IG_CAP')>=0 || ca.indexOf('IG_BR')>=0 ||
         /^\d{6,}$/.test(c) || /^\d{6,}$/.test(a);                    // IDs numéricos de campanha/anúncio
       if (PAGAS_ORIGEM.indexOf(o)>=0 || campanhaPaga) return 'pago';
       const ehConteudo = ORGANICA_CONTEUDO.some(p => c.indexOf(p)>=0 || a.indexOf(p)>=0 || o.indexOf(p)>=0);
@@ -138,7 +147,9 @@ function buscarLeads(deStr, ateStr) {
     const registros = [];
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
-      const rawData = row[iData];
+      // Data de ENTRADA = Data de Criação da Conversa (principal); fallback p/ Data de Criação do Card
+      const rawData = (iDataConversa >= 0 && row[iDataConversa]) ? row[iDataConversa]
+                    : (iDataCard     >= 0 ? row[iDataCard] : null);
       if (!rawData) continue;
       const d = rawData instanceof Date ? rawData : new Date(rawData);
       if (isNaN(d.getTime())) continue;
@@ -156,13 +167,14 @@ function buscarLeads(deStr, ateStr) {
       const anuncio   = iAnuncio   >= 0 ? String(row[iAnuncio]   || '').trim() : '';
       const campanha  = iCampanha  >= 0 ? String(row[iCampanha]  || '').trim() : '';
 
-      // ── exclusões da base válida ──
-      if (etq.includes('lead falso'))   continue;  // LEAD FALSO
-      if (/\bcs\s*-/.test(etq))         continue;  // CS - <responsável> (já é cliente)
-      if (etq.includes('helena talks')) continue;  // HELENA TALKS / SP
+      // ── exclusões da BASE (Volume Gerado): SÓ CS e Vagas ──
+      //    Lead Falso NÃO sai aqui — sai na camada de Leads Válidos (flag abaixo).
+      //    Helena Talks / Eventos PERMANECEM (são "Novos Canais", contatos válidos).
+      if (/\bcs\s*-/.test(etq)) continue;  // CS - <responsável> (já é cliente)
       // vaga: olhar etiqueta + origem + campanha + anúncio (VAGA / VAGAS / VAGAS_BH)
       const blobVaga = (etq + ' ' + origem + ' ' + campanha + ' ' + anuncio).toLowerCase();
       if (/\bvaga/.test(blobVaga)) continue;
+      const leadFalso = etq.includes('lead falso');  // marca: sai só de Leads Válidos
 
       // ── tipo de cliente: TODO contato válido conta.
       //    WL só com 4'LEAD P WHITE LABEL e SEM etiqueta de Cliente Final; o resto é Cliente Final. ──
@@ -182,18 +194,18 @@ function buscarLeads(deStr, ateStr) {
       const stage     = isGanho ? 'ganho' : isPerdido ? 'perdido' : isSql ? 'sql' : isMql ? 'mql' : 'lead';
       const perdido   = stage === 'perdido';
 
-      // origem — 4 baldes (Pago / Orgânico / Sem origem / Não classificada)
-      const grupo = classificarOrigem(origem, campanha, anuncio);
+      // origem — 5 baldes (Pago / Novos Canais / Orgânico / Sem origem / Não classificada)
+      const grupo = classificarOrigem(origem, campanha, anuncio, etq);
 
       const mkOf  = dd => String(dd.getFullYear()) + String(dd.getMonth() + 1).padStart(2, '0');
       const lblOf = dd => dd.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }).replace('.', '').replace(' de ', '/');
 
       registros.push({
-        nomeKey: nome.toLowerCase().replace(/\s+/g, ' ').trim(),
-        nome, tipo, stage, perdido, grupo,
+        nomeKey: nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim(),
+        nome, tipo, stage, perdido, leadFalso, grupo,
         conteudo: campanha || anuncio || '',
         anuncio, campanha, statusRaw,
-        d, mesKey: mkOf(d), mes: lblOf(d),                  // criação
+        d, mesKey: mkOf(d), mes: lblOf(d),                  // criação (Data de Criação da Conversa)
         dMov, mesKeyMov: mkOf(dMov), mesMov: lblOf(dMov),   // movimentação
       });
     }
@@ -211,6 +223,7 @@ function buscarLeads(deStr, ateStr) {
         map[key] = {
           nomeKey: ex.nomeKey, nome: hi.nome, tipo: hi.tipo, stage: hi.stage,
           perdido: hi.stage === 'perdido',
+          leadFalso: (ex.leadFalso && r.leadFalso),   // só é Lead Falso se TODOS os cards do contato forem
           grupo: gw.grupo, conteudo: gw.conteudo, anuncio: gw.anuncio, campanha: gw.campanha,
           statusRaw: hi.statusRaw,
           d: (ex.d > r.d ? ex.d : r.d), mesKey: ex.mesKey, mes: ex.mes,
@@ -226,8 +239,8 @@ function buscarLeads(deStr, ateStr) {
 
     /* ── 3ª passada: agregações ── */
     const novo = extra => Object.assign({
-      total:0, cf:0, wl:0, lead:0, mql:0, sql:0, ganho:0, perdido:0,
-      pago:0, organico:0, sem_origem:0, nao_classificada:0,
+      total:0, cf:0, wl:0, volume:0, lead_falso:0, lead:0, mql:0, sql:0, ganho:0, perdido:0,
+      pago:0, organico:0, sem_origem:0, nao_classificada:0, novos_canais:0,
       cf_lead:0, cf_mql:0, cf_sql:0, cf_ganho:0, cf_perdido:0,
       wl_lead:0, wl_mql:0, wl_sql:0, wl_ganho:0, wl_perdido:0,
     }, extra);
@@ -238,13 +251,18 @@ function buscarLeads(deStr, ateStr) {
       else                          { o.cf++; o['cf_' + r.stage]++; }
     };
 
-    let total = 0, cf = 0, wl = 0;
+    let total = 0, cf = 0, wl = 0, volume = 0, leadFalsoTot = 0;
     const mesMap = {}, canalMap = {}, canalMesMap = {}, conteudoMap = {};
     unicos.forEach(r => {
-      total++; if (r.tipo === 'white_label') wl++; else cf++;
       const gl = labelGrupo(r.grupo);
-
       if (!mesMap[r.mesKey]) mesMap[r.mesKey] = novo({ mes: r.mes, mesKey: r.mesKey });
+
+      // Volume Gerado no Mês: TODOS os contatos únicos (sem CS/Vagas) — inclui Lead Falso, Helena Talks, Eventos
+      volume++; mesMap[r.mesKey].volume++;
+      if (r.leadFalso) { leadFalsoTot++; mesMap[r.mesKey].lead_falso++; return; }  // Lead Falso não entra em Leads Válidos
+
+      // Leads Válidos (Volume − Lead Falso): base de Tipo / Jornada / Origem
+      total++; if (r.tipo === 'white_label') wl++; else cf++;
       acumula(mesMap[r.mesKey], r);
 
       if (!canalMap[r.grupo]) canalMap[r.grupo] = novo({ canal: gl, tipoOrigem: r.grupo });
@@ -260,7 +278,7 @@ function buscarLeads(deStr, ateStr) {
       acumula(conteudoMap[ccKey], r);
     });
 
-    const recentes = unicos.slice().sort((a, b) => b.d - a.d).slice(0, 50).map(r => ({
+    const recentes = unicos.filter(r => !r.leadFalso).sort((a, b) => b.d - a.d).slice(0, 50).map(r => ({
       data: r.d.toLocaleDateString('pt-BR'), nome: r.nome, canal: labelGrupo(r.grupo),
       tipo: r.tipo, status: r.statusRaw || 'lead', stage: r.stage,
       isMql: r.stage === 'mql', isSql: r.stage === 'sql', isGanho: r.stage === 'ganho', isPerdido: r.perdido,
@@ -271,7 +289,7 @@ function buscarLeads(deStr, ateStr) {
        Conta todo contato em MQL/SQL/Ganho cuja ÚLTIMA MOVIMENTAÇÃO (Data de Atualização do Card)
        caiu no período — independente de quando foi criado. Dedup por (mês de movimentação + nome). ── */
     const regConv = registros.filter(r =>
-      (r.stage === 'mql' || r.stage === 'sql' || r.stage === 'ganho') &&
+      !r.leadFalso && (r.stage === 'mql' || r.stage === 'sql' || r.stage === 'ganho') &&
       (!ini || r.dMov >= ini) && (!fim || r.dMov <= fim));
     const convMap = {};
     dedupPor(regConv, 'mesKeyMov').forEach(r => {
@@ -287,7 +305,7 @@ function buscarLeads(deStr, ateStr) {
     const conversoesPorMes = Object.values(convMap).sort((a, b) => a.mesKey > b.mesKey ? 1 : -1);
 
     const result = {
-      total, cf, wl,
+      total, cf, wl, volume, leadFalso: leadFalsoTot,
       porMes:      Object.values(mesMap).sort((a, b) => a.mesKey > b.mesKey ? 1 : -1),
       porCanalMes: Object.values(canalMesMap),
       porCanal:    Object.values(canalMap).sort((a, b) => b.total - a.total),
@@ -298,7 +316,7 @@ function buscarLeads(deStr, ateStr) {
 
     const ttl = 1800;  // 30 min; chaves por período expiram sozinhas (não precisa limparCache p/ leads)
     const guardar = (k, v) => { try { cache.put(k + sfx, JSON.stringify(v), ttl); } catch (e) {} }; // best-effort (ignora blocos > 100KB)
-    guardar('leads_meta',        { total: result.total, cf: result.cf, wl: result.wl, conversoesPorMes: result.conversoesPorMes });
+    guardar('leads_meta',        { total: result.total, cf: result.cf, wl: result.wl, volume: result.volume, leadFalso: result.leadFalso, conversoesPorMes: result.conversoesPorMes });
     guardar('leads_porMes',      result.porMes);
     guardar('leads_porCanalMes', result.porCanalMes);
     guardar('leads_porCanal',    result.porCanal);
