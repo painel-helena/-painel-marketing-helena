@@ -486,11 +486,11 @@
       // soma respeitando o filtro de TIPO (Todos / CF / WL)
       const pick    = (c,b)=> tipo==='cliente_final'?(c['cf_'+b]||0): tipo==='white_label'?(c['wl_'+b]||0):(c[b]||0);
       const pickTot = c => tipo==='cliente_final'?(c.cf||0): tipo==='white_label'?(c.wl||0):(c.total||c.count||0);
-      const aggSt = rows => { const o={total:0,lead:0,mql:0,sql:0,ganho:0};
-        rows.forEach(c=>{ o.total+=pickTot(c); o.lead+=pick(c,'lead'); o.mql+=pick(c,'mql'); o.sql+=pick(c,'sql'); o.ganho+=pick(c,'ganho'); });
+      const aggSt = rows => { const o={total:0,lead:0,mql:0,sql:0,ganho:0,perdido:0};
+        rows.forEach(c=>{ o.total+=pickTot(c); o.lead+=pick(c,'lead'); o.mql+=pick(c,'mql'); o.sql+=pick(c,'sql'); o.ganho+=pick(c,'ganho'); o.perdido+=pick(c,'perdido'); });
         return o; };
-      const aggTipo = (rows,t) => { const o={total:0,lead:0,mql:0,sql:0,ganho:0};
-        rows.forEach(c=>{ o.total+=(c[t]||0); o.lead+=(c[t+'_lead']||0); o.mql+=(c[t+'_mql']||0); o.sql+=(c[t+'_sql']||0); o.ganho+=(c[t+'_ganho']||0); });
+      const aggTipo = (rows,t) => { const o={total:0,lead:0,mql:0,sql:0,ganho:0,perdido:0};
+        rows.forEach(c=>{ o.total+=(c[t]||0); o.lead+=(c[t+'_lead']||0); o.mql+=(c[t+'_mql']||0); o.sql+=(c[t+'_sql']||0); o.ganho+=(c[t+'_ganho']||0); o.perdido+=(c[t+'_perdido']||0); });
         return o; };
 
       // ── resumo do topo (respeita período + tipo + foco) ──
@@ -506,14 +506,14 @@
       const canalPie = porCanal.filter(g=>g.total>0).map(g=>({name:g.label,value:g.total,color:g.cor}));
 
       // ── White Label por canal (etapas WL) ──
-      const wlPorCanal = GRUPOS.map(g => { let lead=0,mql=0,sql=0,ganho=0,total=0;
-        cmAll.filter(c=>c.tipoOrigem===g.key).forEach(c=>{ total+=(c.wl||0); lead+=(c.wl_lead||0); mql+=(c.wl_mql||0); sql+=(c.wl_sql||0); ganho+=(c.wl_ganho||0); });
-        return {...g, total, lead, mql, sql, ganho}; }).filter(g=>g.total>0);
+      const wlPorCanal = GRUPOS.map(g => { let lead=0,mql=0,sql=0,ganho=0,perdido=0,total=0;
+        cmAll.filter(c=>c.tipoOrigem===g.key).forEach(c=>{ total+=(c.wl||0); lead+=(c.wl_lead||0); mql+=(c.wl_mql||0); sql+=(c.wl_sql||0); ganho+=(c.wl_ganho||0); perdido+=(c.wl_perdido||0); });
+        return {...g, total, lead, mql, sql, ganho, perdido}; }).filter(g=>g.total>0);
 
       // ── conferências (todo o período, completo) ──
-      const T = mesesP.reduce((o,m)=>{ ['total','cf','wl','lead','mql','sql','ganho','pago','organico','sem_origem','nao_classificada'].forEach(k=>o[k]=(o[k]||0)+(m[k]||0)); return o; }, {});
+      const T = mesesP.reduce((o,m)=>{ ['total','cf','wl','lead','mql','sql','ganho','perdido','pago','organico','sem_origem','nao_classificada'].forEach(k=>o[k]=(o[k]||0)+(m[k]||0)); return o; }, {});
       const conf = [
-        {nome:'Total = Lead + MQL + SQL + Ganho', a:(T.lead||0)+(T.mql||0)+(T.sql||0)+(T.ganho||0), b:T.total||0},
+        {nome:'Total = Lead + MQL + SQL + Ganho + Perdido', a:(T.lead||0)+(T.mql||0)+(T.sql||0)+(T.ganho||0)+(T.perdido||0), b:T.total||0},
         {nome:'Total = Cliente Final + White Label', a:(T.cf||0)+(T.wl||0), b:T.total||0},
         {nome:'Total = Pago + Orgânico + Sem origem + Não class.', a:(T.pago||0)+(T.organico||0)+(T.sem_origem||0)+(T.nao_classificada||0), b:T.total||0},
       ];
@@ -558,10 +558,11 @@
       );
 
       const ETAPAS=[
-        {k:'lead', nome:'Lead',  cor:'#6366f1'},
-        {k:'mql',  nome:'MQL',   cor:'#8b5cf6'},
-        {k:'sql',  nome:'SQL',   cor:'#0ea5e9'},
-        {k:'ganho',nome:'Ganho', cor:'#10b981'},
+        {k:'lead',   nome:'Lead',    cor:'#6366f1'},
+        {k:'mql',    nome:'MQL',     cor:'#8b5cf6'},
+        {k:'sql',    nome:'SQL',     cor:'#0ea5e9'},
+        {k:'ganho',  nome:'Ganho',   cor:'#10b981'},
+        {k:'perdido',nome:'Perdido', cor:'#ef4444'},
       ];
       const Cell=({children,right,bold})=>(<td style={{padding:'8px 10px',textAlign:right?'right':'left',fontSize:12.5,fontFamily:right?'monospace':'Inter',fontWeight:bold?700:400,color:bold?'#0f172a':'#475569'}}>{children}</td>);
 
@@ -587,12 +588,13 @@
             <MetricCard title="Cliente Final" value={fmt(cfA.total)} sub={pct(F.total?cfA.total/(cfA.total+wlA.total)*100:0)+' do total'} cor="indigo" icon={<IUsers/>} info="Tipo = Cliente Final. Regra: quem NÃO tem a etiqueta 4'LEAD P WHITE LABEL (ou tem WL + CF juntos) é Cliente Final."/>
             <MetricCard title="White Label" value={fmt(wlA.total)} sub={pct(F.total?wlA.total/(cfA.total+wlA.total)*100:0)+' do total'} cor="amber" icon={<IWL/>} info="Tipo = White Label. Só com a etiqueta 4'LEAD P WHITE LABEL e SEM etiqueta de Cliente Final."/>
             <MetricCard title="🏆 Ganho" value={fmt(F.ganho)} sub={pct(taxaGanho)+' de fechamento'} cor="green" icon={<IUsers/>} info="Etapa no CRM = 6. Ganho. Taxa = Ganho ÷ Total de leads do recorte."/>
+            <MetricCard title="❌ Perdido" value={fmt(F.perdido)} sub={pct(F.total?F.perdido/F.total*100:0)+' do total'} cor="red" icon={<IUsers/>} info="Etapa no CRM = 7. Perdido (etapa final). Cada contato conta em UMA etapa só — se foi perdido, sai de MQL/SQL."/>
           </div>
 
           {/* RESUMO: funil de etapa + origem lado a lado */}
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))',gap:12}}>
             <Bloco titulo="Distribuição por etapa do funil" sub={`Etapa única · soma = ${fmt(F.total)}`}
-              info="Cada contato entra em UMA etapa final (prioridade Ganho > SQL > MQL > Lead). Lead + MQL + SQL + Ganho = Total.">
+              info="Cada contato entra em UMA etapa final (prioridade Ganho / Perdido > SQL > MQL > Lead). Lead + MQL + SQL + Ganho + Perdido = Total.">
               <div style={{display:'flex',flexDirection:'column',gap:9}}>
                 {ETAPAS.map(e=>{ const v=F[e.k]; const w=F.total?Math.max(2,v/F.total*100):0; return (
                   <div key={e.k} style={{display:'flex',alignItems:'center',gap:12}}>
@@ -621,8 +623,8 @@
                   <div style={{display:'flex',alignItems:'center',gap:8}}><span style={{background:cor+'22',color:cor,padding:7,borderRadius:8,display:'flex'}}>{ic}</span><span style={{fontSize:13,fontWeight:700,color:'#1e293b'}}>{lab}</span></div>
                   <span style={{fontSize:22,fontWeight:800,color:'#0f172a'}}>{fmt(a.total)}</span>
                 </div>
-                <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6}}>
-                  {[['Lead',a.lead,'#4338ca','#eef2ff'],['MQL',a.mql,'#7c3aed','#f5f3ff'],['SQL',a.sql,'#0e7490','#ecfeff'],['Ganho',a.ganho,'#047857','#ecfdf5']].map(([st,n,tc,bg])=>(
+                <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:6}}>
+                  {[['Lead',a.lead,'#4338ca','#eef2ff'],['MQL',a.mql,'#7c3aed','#f5f3ff'],['SQL',a.sql,'#0e7490','#ecfeff'],['Ganho',a.ganho,'#047857','#ecfdf5'],['Perdido',a.perdido,'#b91c1c','#fef2f2']].map(([st,n,tc,bg])=>(
                     <div key={st} style={{textAlign:'center',padding:'8px 3px',background:bg,borderRadius:8}}>
                       <p style={{fontSize:9,fontWeight:700,color:tc,textTransform:'uppercase',margin:'0 0 3px'}}>{st}</p>
                       <p style={{fontSize:17,fontWeight:800,color:'#0f172a',margin:0}}>{fmt(n)}</p>
@@ -661,11 +663,11 @@
 
             {/* Funil por canal */}
             <Bloco titulo="Funil por canal" sub="Cada etapa (única) dentro de cada canal" info="Lead/MQL/SQL/Ganho exclusivos por canal. Taxa = Ganho ÷ leads do canal.">
-              <Tabela cols={[{label:'Canal'},{label:'Leads',right:true},{label:'Lead',right:true},{label:'MQL',right:true},{label:'SQL',right:true},{label:'Ganho',right:true},{label:'Taxa',right:true}]}
+              <Tabela cols={[{label:'Canal'},{label:'Leads',right:true},{label:'Lead',right:true},{label:'MQL',right:true},{label:'SQL',right:true},{label:'Ganho',right:true},{label:'Perd.',right:true},{label:'Taxa',right:true}]}
                 rows={porCanal} renderRow={(g)=>(
                   <>
                     <Td><span style={{display:'inline-flex',alignItems:'center',gap:6}}><span style={{width:9,height:9,borderRadius:'50%',background:g.cor,display:'inline-block'}}/>{g.label}</span></Td>
-                    <Td right bold>{fmt(g.total)}</Td><Td right mono>{fmt(g.lead)}</Td><Td right mono>{fmt(g.mql)}</Td><Td right mono>{fmt(g.sql)}</Td><Td right mono>{fmt(g.ganho)}</Td>
+                    <Td right bold>{fmt(g.total)}</Td><Td right mono>{fmt(g.lead)}</Td><Td right mono>{fmt(g.mql)}</Td><Td right mono>{fmt(g.sql)}</Td><Td right mono>{fmt(g.ganho)}</Td><Td right mono>{fmt(g.perdido)}</Td>
                     <Td right><span className={g.total&&g.ganho/g.total>=0.1?'badge-green':'badge-gray'}>{pct(g.total?g.ganho/g.total*100:0)}</span></Td>
                   </>
                 )}/>
@@ -673,12 +675,12 @@
 
             {/* Visão Geral mensal */}
             <Bloco titulo="Visão geral mensal" sub="Total · tipo · etapa · canal — por mês (Data de Criação do Card)"
-              csvDados={mesesP.map(m=>({mes:m.mes,total:m.total,cliente_final:m.cf,white_label:m.wl,lead:m.lead,mql:m.mql,sql:m.sql,ganho:m.ganho,pago:m.pago,organico:m.organico,sem_origem:m.sem_origem,nao_classificada:m.nao_classificada}))} csvNome="visao-geral-mensal.csv"
+              csvDados={mesesP.map(m=>({mes:m.mes,total:m.total,cliente_final:m.cf,white_label:m.wl,lead:m.lead,mql:m.mql,sql:m.sql,ganho:m.ganho,perdido:m.perdido,pago:m.pago,organico:m.organico,sem_origem:m.sem_origem,nao_classificada:m.nao_classificada}))} csvNome="visao-geral-mensal.csv"
               info="Visão completa (todos os tipos/origens) por mês.">
               <div style={{overflowX:'auto'}}>
                 <table style={{width:'100%',borderCollapse:'collapse',whiteSpace:'nowrap'}}>
                   <thead><tr style={{borderBottom:'2px solid #f1f5f9'}}>
-                    {['Mês','Total','CF','WL','Lead','MQL','SQL','Ganho','Pago','Orgân.','Sem orig.','Não cl.'].map((h,i)=>(
+                    {['Mês','Total','CF','WL','Lead','MQL','SQL','Ganho','Perd.','Pago','Orgân.','Sem orig.','Não cl.'].map((h,i)=>(
                       <th key={i} style={{padding:'8px 10px',fontSize:10,fontWeight:700,color:'#94a3b8',textTransform:'uppercase',textAlign:i===0?'left':'right'}}>{h}</th>
                     ))}
                   </tr></thead>
@@ -686,13 +688,13 @@
                     {mesesP.map((m,i)=>(
                       <tr key={i} style={{borderBottom:'1px solid #f8fafc'}}>
                         <Cell bold>{m.mes}</Cell><Cell right bold>{fmt(m.total)}</Cell><Cell right>{fmt(m.cf)}</Cell><Cell right>{fmt(m.wl)}</Cell>
-                        <Cell right>{fmt(m.lead)}</Cell><Cell right>{fmt(m.mql)}</Cell><Cell right>{fmt(m.sql)}</Cell><Cell right>{fmt(m.ganho)}</Cell>
+                        <Cell right>{fmt(m.lead)}</Cell><Cell right>{fmt(m.mql)}</Cell><Cell right>{fmt(m.sql)}</Cell><Cell right>{fmt(m.ganho)}</Cell><Cell right>{fmt(m.perdido)}</Cell>
                         <Cell right>{fmt(m.pago)}</Cell><Cell right>{fmt(m.organico)}</Cell><Cell right>{fmt(m.sem_origem)}</Cell><Cell right>{fmt(m.nao_classificada||0)}</Cell>
                       </tr>
                     ))}
                     <tr style={{borderTop:'2px solid #e2e8f0',background:'#f8fafc'}}>
                       <Cell bold>Total</Cell><Cell right bold>{fmt(T.total||0)}</Cell><Cell right bold>{fmt(T.cf||0)}</Cell><Cell right bold>{fmt(T.wl||0)}</Cell>
-                      <Cell right bold>{fmt(T.lead||0)}</Cell><Cell right bold>{fmt(T.mql||0)}</Cell><Cell right bold>{fmt(T.sql||0)}</Cell><Cell right bold>{fmt(T.ganho||0)}</Cell>
+                      <Cell right bold>{fmt(T.lead||0)}</Cell><Cell right bold>{fmt(T.mql||0)}</Cell><Cell right bold>{fmt(T.sql||0)}</Cell><Cell right bold>{fmt(T.ganho||0)}</Cell><Cell right bold>{fmt(T.perdido||0)}</Cell>
                       <Cell right bold>{fmt(T.pago||0)}</Cell><Cell right bold>{fmt(T.organico||0)}</Cell><Cell right bold>{fmt(T.sem_origem||0)}</Cell><Cell right bold>{fmt(T.nao_classificada||0)}</Cell>
                     </tr>
                   </tbody>
@@ -708,6 +710,7 @@
                   {label:'MQL',  data:mesesP.map(m=>m.mql),  backgroundColor:'#8b5cf6'},
                   {label:'SQL',  data:mesesP.map(m=>m.sql),  backgroundColor:'#0ea5e9'},
                   {label:'Ganho',data:mesesP.map(m=>m.ganho),backgroundColor:'#10b981'},
+                  {label:'Perdido',data:mesesP.map(m=>m.perdido),backgroundColor:'#ef4444'},
                 ]} h={270}/>
               </Bloco>
             )}
@@ -735,7 +738,7 @@
             {/* Visão White Label */}
             <Bloco titulo="🏢 Visão White Label" sub="Foco nos leads White Label — etapa e canal" info="Recorte só dos contatos classificados como White Label, no período.">
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:10,marginBottom:16}}>
-                {[['Total WL',wlA.total,'#0f172a'],['Lead',wlA.lead,'#6366f1'],['MQL',wlA.mql,'#8b5cf6'],['SQL',wlA.sql,'#0ea5e9'],['Ganho',wlA.ganho,'#10b981']].map(([l,v,c])=>(
+                {[['Total WL',wlA.total,'#0f172a'],['Lead',wlA.lead,'#6366f1'],['MQL',wlA.mql,'#8b5cf6'],['SQL',wlA.sql,'#0ea5e9'],['Ganho',wlA.ganho,'#10b981'],['Perdido',wlA.perdido,'#ef4444']].map(([l,v,c])=>(
                   <div key={l} style={{background:'#f8fafc',borderRadius:9,padding:'10px 12px',textAlign:'center'}}>
                     <p style={{fontSize:10,fontWeight:700,color:'#94a3b8',textTransform:'uppercase',margin:'0 0 3px'}}>{l}</p>
                     <p style={{fontSize:19,fontWeight:800,color:c,margin:0}}>{fmt(v)}</p>
@@ -743,11 +746,11 @@
                 ))}
               </div>
               <p style={{fontSize:11,fontWeight:700,color:'#94a3b8',textTransform:'uppercase',margin:'0 0 8px'}}>Origem/canal de cada etapa (White Label)</p>
-              <Tabela cols={[{label:'Canal'},{label:'WL Lead',right:true},{label:'WL MQL',right:true},{label:'WL SQL',right:true},{label:'WL Ganho',right:true},{label:'Total',right:true}]}
+              <Tabela cols={[{label:'Canal'},{label:'WL Lead',right:true},{label:'WL MQL',right:true},{label:'WL SQL',right:true},{label:'WL Ganho',right:true},{label:'WL Perd.',right:true},{label:'Total',right:true}]}
                 rows={wlPorCanal} renderRow={(g)=>(
                   <>
                     <Td><span style={{display:'inline-flex',alignItems:'center',gap:6}}><span style={{width:9,height:9,borderRadius:'50%',background:g.cor,display:'inline-block'}}/>{g.label}</span></Td>
-                    <Td right mono>{fmt(g.lead)}</Td><Td right mono>{fmt(g.mql)}</Td><Td right mono>{fmt(g.sql)}</Td><Td right mono>{fmt(g.ganho)}</Td><Td right bold>{fmt(g.total)}</Td>
+                    <Td right mono>{fmt(g.lead)}</Td><Td right mono>{fmt(g.mql)}</Td><Td right mono>{fmt(g.sql)}</Td><Td right mono>{fmt(g.ganho)}</Td><Td right mono>{fmt(g.perdido)}</Td><Td right bold>{fmt(g.total)}</Td>
                   </>
                 )}/>
             </Bloco>
@@ -773,7 +776,7 @@
                       <Td bold>{l.nome||'—'}</Td>
                       <Td>{l.canal}</Td>
                       <Td><span className={l.tipo==='white_label'?'badge-amber':'badge-indigo'}>{l.tipo==='white_label'?'White Label':'Cliente Final'}</span></Td>
-                      <Td><span className={l.isGanho?'badge-green':(l.isSql||l.isMql)?'badge-indigo':'badge-gray'}>{l.isGanho?'GANHO':l.isSql?'SQL':l.isMql?'MQL':'LEAD'}</span></Td>
+                      <Td><span className={l.isGanho?'badge-green':l.isPerdido?'badge-red':(l.isSql||l.isMql)?'badge-indigo':'badge-gray'}>{l.isGanho?'GANHO':l.isPerdido?'PERDIDO':l.isSql?'SQL':l.isMql?'MQL':'LEAD'}</span></Td>
                       <Td right>{l.data}</Td>
                     </>
                   )}/>
