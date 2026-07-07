@@ -567,107 +567,241 @@
         {k:'perdido',nome:'Perdido', cor:'#ef4444'},
       ];
       const Cell=({children,right,bold})=>(<td style={{padding:'8px 10px',textAlign:right?'right':'left',fontSize:12.5,fontFamily:right?'monospace':'Inter',fontWeight:bold?700:400,color:bold?'#0f172a':'#475569'}}>{children}</td>);
+      // ═══ ESTRATÉGICO (mesmos dados, leitura de growth) ═══
+      const winRate = (g,p)=> (g+p) ? g/(g+p)*100 : 0;
+      const winCor  = w => w>=45?'#059669': w>=20?'#d97706':'#dc2626';
+      const winBg   = w => w>=45?'#ecfdf5': w>=20?'#fffbeb':'#fef2f2';
+      const totCanais = porCanal.reduce((s,g)=>s+g.total,0) || 1;
+      const canais = porCanal.filter(g=>g.total>0)
+        .map(g=>({...g, win:winRate(g.ganho,g.perdido), share:g.total/totCanais*100}))
+        .sort((a,b)=>b.total-a.total);
+      const maxCanal = Math.max(1, ...canais.map(c=>c.total));
+      const decid = (F.ganho||0)+(F.perdido||0);
+      const semOrig = canais.find(c=>c.key==='sem_origem') || {total:0,share:0,win:0};
+      const rastreado = 100 - semOrig.share;
+      const cfWin = winRate(cfA.ganho,cfA.perdido), wlWin = winRate(wlA.ganho,wlA.perdido);
+      const wlShare = (cfA.total+wlA.total)? wlA.total/(cfA.total+wlA.total)*100 : 0;
+
+      // tendência mensal (válidos por mês, respeita tipo) + geometria do SVG
+      const mesesTrend = mesesP.map(m=>({ mes:m.mes, v: tipo==='cliente_final'?(m.cf||0): tipo==='white_label'?(m.wl||0):(m.total||0) }));
+      const trW=780,trH=200,trPl=44,trPr=14,trPtop=12,trPb=26, trIw=trW-trPl-trPr, trIh=trH-trPtop-trPb;
+      const trMax=Math.max(1,...mesesTrend.map(m=>m.v))*1.12;
+      const trX=i=> trPl + (mesesTrend.length<=1? trIw/2 : i/(mesesTrend.length-1)*trIw);
+      const trY=v=> trPtop + trIh - (v/trMax*trIh);
+      const trPts=mesesTrend.map((m,i)=>[trX(i),trY(m.v)]);
+      const trArea = mesesTrend.length ? ('M'+trPl+','+(trPtop+trIh)+' '+trPts.map(p=>'L'+p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ')+' L'+trX(Math.max(0,mesesTrend.length-1)).toFixed(1)+','+(trPtop+trIh)+' Z') : '';
+      const trLine = trPts.length ? ('M'+trPts.map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join(' L')) : '';
+      const trGrid = [0,1,2,3].map(g=>{ const val=trMax*g/3; return {val, y:trY(val)}; });
+
+      // top campanhas (porConteudo agregado por conteúdo, respeita tipo/período)
+      const GROUP_LBL = ['Sem origem de conversão','Pago / Ads','Orgânico identificado','Novos Canais','Origem rastreada não classificada',''];
+      const campMap = {};
+      (ld.porConteudo||[]).filter(c=>inRange(c.mesKey)).forEach(c=>{
+        const nome=(c.conteudo||'').trim(); if(GROUP_LBL.indexOf(nome)>=0) return;
+        const o=campMap[nome]||(campMap[nome]={conteudo:nome,total:0,ganho:0,perdido:0});
+        o.total+=pickTot(c); o.ganho+=pick(c,'ganho'); o.perdido+=pick(c,'perdido');
+      });
+      const topCamp = Object.values(campMap).map(c=>({...c,win:winRate(c.ganho,c.perdido)}))
+        .filter(c=>c.total>0).sort((a,b)=>b.total-a.total).slice(0,7);
+      const maxCamp = Math.max(1, ...topCamp.map(c=>c.total));
+
+      // insights estratégicos (acionáveis)
+      const insE=[];
+      const bestCh=[...canais].filter(c=>c.total>=100 && c.key!=='nao_classificada' && c.key!=='sem_origem').sort((a,b)=>b.win-a.win)[0];
+      if(bestCh) insE.push({ic:'🌱',bg:'#ecfdf5',cor:'#059669',h:`${bestCh.label} converte ${pct(bestCh.win)} — o melhor canal`,p:`Mas é só ${pct(bestCh.share)} do volume. Tem espaço pra escalar.`,act:`Investir mais em ${bestCh.label}`});
+      if(semOrig.total>0) insE.push({ic:'🚨',bg:'#fef2f2',cor:'#dc2626',h:`${pct(semOrig.share)} dos leads entram "Sem origem"`,p:`E fecham só ${pct(semOrig.win)}. Metade da base não é rastreável — não dá pra otimizar o que não se mede.`,act:'Prioridade #1: rastreio (UTM/etiqueta na entrada)'});
+      if(cfA.total>0 && wlA.total>0) insE.push({ic:'⚖️',bg:'#eef2ff',cor:'#4338ca',h:`${wlWin>cfWin?'White Label':'Cliente Final'} fecha melhor (${pct(Math.max(cfWin,wlWin))} vs ${pct(Math.min(cfWin,wlWin))})`,p:`White Label é ${pct(wlShare)} do volume gerado — o perfil que mais entra.`,act:'Dobrar a aposta no perfil que mais converte'});
+      if(topCamp[0]){ const b0=topCamp[0], bw=[...topCamp].filter(c=>c.total>=100).sort((a,b)=>b.win-a.win)[0];
+        insE.push({ic:'🎯',bg:'#fffbeb',cor:'#d97706',h:`"${b0.conteudo}" é a que mais gera`,p:`${fmt(b0.total)} leads, fecha ${pct(b0.win)}.${bw&&bw.conteudo!==b0.conteudo?` "${bw.conteudo}" fecha ${pct(bw.win)}.`:''}`,act:'Realocar verba pras de maior fechamento'}); }
 
       return (
-        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+        <div style={{display:'flex',flexDirection:'column',gap:22}}>
 
-          {/* contexto + foco de origem */}
-          <div style={{display:'flex',flexWrap:'wrap',gap:10,alignItems:'center',justifyContent:'space-between',background:'#fff',border:'1px solid #e2e8f0',borderRadius:10,padding:'10px 14px'}}>
-            <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-              <span style={{fontSize:11,fontWeight:700,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'.05em'}}>Foco do resumo:</span>
-              <div style={{display:'inline-flex',background:'#f1f5f9',borderRadius:8,padding:3,gap:2,flexWrap:'wrap'}}>
-                {[['all','Todas'],['pago','🟥 Pago'],['novos_canais','🔷 Novos Canais'],['organico','🟩 Orgânico'],['sem_origem','🟦 Sem origem'],['nao_classificada','⚪ Não class.']].map(([v,l])=>(
-                  <button key={v} onClick={()=>setOrigem(v)} className={origem===v?'pill-a':'pill-i'} style={{padding:'4px 10px',borderRadius:6,border:'none',cursor:'pointer',fontSize:12,fontWeight:500,background:origem===v?'#fff':'none'}}>{l}</button>
-                ))}
+          {/* contexto */}
+          <p style={{fontSize:12,color:'#94a3b8',margin:0}}>Período <b style={{color:'#475569'}}>{fmtDate(de)} – {fmtDate(ate)}</b> · <b style={{color:'#475569'}}>{tipoLabel}</b></p>
+
+          {/* PULSO — KPIs */}
+          <div>
+            <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:12}}>
+              <h3 style={{fontSize:15,fontWeight:800,color:'#0f172a',margin:0}}>Pulso do growth</h3>
+              <span style={{fontSize:12,color:'#94a3b8'}}>o essencial em 5 números</span>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(168px,1fr))',gap:12}}>
+              {[
+                {lab:'Leads Válidos',val:fmt(F.total),cor:'#4f46e5',foot:<>de <b>{fmt(T.volume||0)}</b> gerados · {fmt(T.lead_falso||0)} Lead Falso fora</>},
+                {lab:'Cliente Final × White Label',val:pct(F.total?cfA.total/(cfA.total+wlA.total)*100:0).replace('%','')+' / '+pct(wlShare),cor:'#6366f1',foot:<><b>{fmt(cfA.total)}</b> CF · <b>{fmt(wlA.total)}</b> WL</>},
+                {lab:'Taxa de fechamento',val:pct(winRate(F.ganho,F.perdido)),cor:'#059669',foot:<><b>{fmt(F.ganho)}</b> ganhos · {fmt(F.perdido)} perdidos</>},
+                {lab:'Pipeline (SQL)',val:fmt(F.sql),cor:'#4338ca',foot:'oportunidades qualificadas'},
+                {lab:'Leads rastreados',val:pct(rastreado),cor:'#d97706',foot:<><b>{pct(semOrig.share)}</b> entram sem origem</>},
+              ].map((k,i)=>(
+                <div key={i} className="card" style={{padding:'15px 16px',position:'relative',overflow:'hidden'}}>
+                  <div style={{position:'absolute',top:0,left:0,right:0,height:3,background:k.cor}}/>
+                  <div style={{fontSize:11,fontWeight:700,color:'#475569',marginTop:4}}>{k.lab}</div>
+                  <div style={{fontSize:28,fontWeight:800,letterSpacing:'-.02em',color:'#0f172a',margin:'5px 0 2px',fontVariantNumeric:'tabular-nums'}}>{k.val}</div>
+                  <div style={{fontSize:11.5,color:'#94a3b8'}}>{k.foot}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* JORNADA */}
+          <div>
+            <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:12}}>
+              <h3 style={{fontSize:15,fontWeight:800,color:'#0f172a',margin:0}}>A jornada dos leads</h3>
+              <span style={{fontSize:12,color:'#94a3b8'}}>onde cada contato está · e quantos fecham</span>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))',gap:12}}>
+              <div className="card" style={{padding:18}}>
+                <p style={{fontSize:10,fontWeight:800,letterSpacing:'.08em',textTransform:'uppercase',color:'#94a3b8',margin:'0 0 10px'}}>Distribuição por etapa</p>
+                <div style={{display:'flex',flexDirection:'column',gap:9}}>
+                  {ETAPAS.map(e=>{ const v=F[e.k]; const mx=Math.max(F.lead,F.mql,F.sql,F.ganho,F.perdido)||1; const w=Math.max(4,v/mx*100); return (
+                    <div key={e.k} style={{display:'flex',alignItems:'center',gap:12}}>
+                      <div style={{width:52,fontSize:12,fontWeight:700,color:'#475569',textAlign:'right',flexShrink:0}}>{e.nome}</div>
+                      <div style={{flex:1,background:'#eef0f5',borderRadius:8,height:30,overflow:'hidden'}}>
+                        <div style={{width:w+'%',height:'100%',background:e.cor,borderRadius:8,transition:'width .6s',display:'flex',alignItems:'center',paddingLeft:10,minWidth:44}}>
+                          <span style={{fontSize:12.5,fontWeight:800,color:'#fff'}}>{fmt(v)}</span>
+                        </div>
+                      </div>
+                      <div style={{width:92,fontSize:11.5,color:'#475569',flexShrink:0}}><b style={{color:'#0f172a'}}>{pct(F.total?v/F.total*100:0)}</b> do total</div>
+                    </div>
+                  ); })}
+                </div>
+              </div>
+              <div className="card" style={{padding:18}}>
+                <p style={{fontSize:10,fontWeight:800,letterSpacing:'.08em',textTransform:'uppercase',color:'#94a3b8',margin:'0 0 10px'}}>Desfecho de quem decidiu</p>
+                <div style={{fontSize:12.5,color:'#475569',marginBottom:7}}>Dos <b>{fmt(decid)}</b> contatos que chegaram a um desfecho:</div>
+                <div style={{display:'flex',height:36,borderRadius:9,overflow:'hidden'}}>
+                  <div style={{width:(decid?F.ganho/decid*100:0)+'%',background:'#059669',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:800,fontSize:12.5}}>{decid&&F.ganho/decid>=.12?pct(F.ganho/decid*100):''}</div>
+                  <div style={{width:(decid?F.perdido/decid*100:0)+'%',background:'#dc2626',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:800,fontSize:12.5}}>{decid&&F.perdido/decid>=.12?pct(F.perdido/decid*100):''}</div>
+                </div>
+                <div style={{display:'flex',gap:16,fontSize:12,color:'#475569',marginTop:9}}>
+                  <span><span style={{display:'inline-block',width:9,height:9,borderRadius:'50%',background:'#059669',marginRight:6}}/>Ganho {fmt(F.ganho)}</span>
+                  <span><span style={{display:'inline-block',width:9,height:9,borderRadius:'50%',background:'#dc2626',marginRight:6}}/>Perdido {fmt(F.perdido)}</span>
+                </div>
+                <div style={{marginTop:13,fontSize:12,color:'#92400e',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:9,padding:'9px 11px'}}>⚠️ Meses recentes ainda têm muitos contatos <b>em aberto</b> — por isso a taxa geral fica puxada pra baixo.</div>
               </div>
             </div>
-            <p style={{fontSize:11,color:'#94a3b8',margin:0}}>Resumo: <b style={{color:'#475569'}}>{tipoLabel}</b> · <b style={{color:'#475569'}}>{origemLabel}</b> · {fmtDate(de)} – {fmtDate(ate)}</p>
           </div>
 
-          {/* KPIs */}
-          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:12}}>
-            <MetricCard title="Total de Leads" value={fmt(F.total)} sub={`${fmtDate(de)} – ${fmtDate(ate)}`} cor="indigo" icon={<IUsers/>} info="Leads Válidos: contatos únicos por mês (Data de Criação da Conversa), sem CS/Vagas e sem Lead Falso, dedup por Nome (sem acento). Respeita período/tipo/foco."/>
-            <MetricCard title="Cliente Final" value={fmt(cfA.total)} sub={pct(F.total?cfA.total/(cfA.total+wlA.total)*100:0)+' do total'} cor="indigo" icon={<IUsers/>} info="Tipo = Cliente Final. Regra: quem NÃO tem a etiqueta 4'LEAD P WHITE LABEL (ou tem WL + CF juntos) é Cliente Final."/>
-            <MetricCard title="White Label" value={fmt(wlA.total)} sub={pct(F.total?wlA.total/(cfA.total+wlA.total)*100:0)+' do total'} cor="amber" icon={<IWL/>} info="Tipo = White Label. Só com a etiqueta 4'LEAD P WHITE LABEL e SEM etiqueta de Cliente Final."/>
-            <MetricCard title="🏆 Ganho" value={fmt(F.ganho)} sub={pct(taxaGanho)+' de fechamento'} cor="green" icon={<IUsers/>} info="Etapa no CRM = 6. Ganho. Taxa = Ganho ÷ Total de leads do recorte."/>
-            <MetricCard title="❌ Perdido" value={fmt(F.perdido)} sub={pct(F.total?F.perdido/F.total*100:0)+' do total'} cor="red" icon={<IUsers/>} info="Etapa no CRM = 7. Perdido (etapa final). Cada contato conta em UMA etapa só — se foi perdido, sai de MQL/SQL."/>
-          </div>
-
-          {/* Volume Gerado → Lead Falso → Leads Válidos (apoio; período inteiro, todos os tipos) */}
-          <div style={{display:'flex',flexWrap:'wrap',gap:12,alignItems:'center',background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:10,padding:'10px 14px',fontSize:12.5,color:'#475569'}}>
-            <span style={{fontSize:10,fontWeight:700,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'.05em'}}>No período:</span>
-            <span><b style={{color:'#0f172a'}}>Volume gerado:</b> {fmt(T.volume||0)}</span>
-            <span style={{color:'#cbd5e1'}}>−</span>
-            <span><b style={{color:'#b91c1c'}}>Lead Falso:</b> {fmt(T.lead_falso||0)}</span>
-            <span style={{color:'#cbd5e1'}}>=</span>
-            <span><b style={{color:'#4338ca'}}>Leads Válidos:</b> {fmt(T.total||0)}</span>
-            <InfoTip texto="Volume Gerado = contatos únicos no mês (Data de Criação da Conversa), só sem CS e sem Vagas (mantém Helena Talks/Eventos e Lead Falso). Leads Válidos = Volume − Lead Falso. Tipo, Jornada e Origem são calculados sobre os Leads Válidos."/>
-          </div>
-
-          {/* RESUMO: funil de etapa + origem lado a lado */}
-          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))',gap:12}}>
-            <Bloco titulo="Distribuição por etapa do funil" sub={`Etapa única · soma = ${fmt(F.total)}`}
-              info="Cada contato entra em UMA etapa final (prioridade Ganho / Perdido > SQL > MQL > Lead). Lead + MQL + SQL + Ganho + Perdido = Total.">
-              <div style={{display:'flex',flexDirection:'column',gap:9}}>
-                {ETAPAS.map(e=>{ const v=F[e.k]; const w=F.total?Math.max(2,v/F.total*100):0; return (
-                  <div key={e.k} style={{display:'flex',alignItems:'center',gap:12}}>
-                    <div style={{width:60,fontSize:12,fontWeight:600,color:'#475569',textAlign:'right',flexShrink:0}}>{e.nome}</div>
-                    <div style={{flex:1,background:'#f1f5f9',borderRadius:8,height:28,overflow:'hidden'}}>
-                      <div style={{width:w+'%',height:'100%',background:e.cor,borderRadius:8,transition:'width .4s',display:'flex',alignItems:'center',paddingLeft:10,minWidth:46}}>
-                        <span style={{fontSize:12,fontWeight:800,color:'#fff'}}>{fmt(v)}</span>
-                      </div>
-                    </div>
-                    <div style={{width:54,fontSize:11.5,color:'#475569',fontWeight:600,flexShrink:0}}>{pct(F.total?v/F.total*100:0)}</div>
+          {/* CANAIS — eficiência */}
+          <div>
+            <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:12}}>
+              <h3 style={{fontSize:15,fontWeight:800,color:'#0f172a',margin:0}}>Onde vale investir?</h3>
+              <span style={{fontSize:12,color:'#94a3b8'}}>volume × eficiência de cada canal</span>
+            </div>
+            <div className="card" style={{padding:18}}>
+              <p style={{margin:'0 0 12px',fontSize:12.5,color:'#475569'}}>Barra = <b>volume de leads</b>. Cor e pílula = <b>taxa de fechamento</b>. O ideal é barra grande e verde.</p>
+              <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                {canais.map(c=>{ const w=Math.max(3,c.total/maxCanal*100); return (
+                  <div key={c.key} style={{display:'grid',gridTemplateColumns:'130px 1fr 120px',gap:12,alignItems:'center'}}>
+                    <div style={{fontSize:12.5,fontWeight:700,color:'#1e293b',display:'flex',alignItems:'center',gap:7}}><span style={{width:9,height:9,borderRadius:'50%',background:c.cor,flexShrink:0}}/>{c.label}</div>
+                    <div style={{background:'#eef0f5',borderRadius:7,height:26,overflow:'hidden'}}><div style={{width:w+'%',height:'100%',background:winCor(c.win),borderRadius:7,transition:'width .6s'}}/></div>
+                    <div style={{fontSize:11.5,color:'#475569',textAlign:'right'}}><b style={{fontWeight:800}}>{fmt(c.total)}</b> <span style={{color:'#94a3b8'}}>({pct(c.share)})</span> <span style={{display:'inline-block',fontSize:11,fontWeight:800,borderRadius:999,padding:'2px 8px',marginLeft:2,color:winCor(c.win),background:winBg(c.win)}}>{pct(c.win)}</span></div>
                   </div>
                 ); })}
               </div>
-            </Bloco>
-            <Bloco titulo="Leads por canal de origem" sub="Pago · Orgânico · Sem origem · Não class." csvDados={porCanal.map(g=>({canal:g.label,leads:g.total,lead:g.lead,mql:g.mql,sql:g.sql,ganho:g.ganho}))} csvNome="leads-por-canal.csv"
-              info="Origem por Origem/Campanha/Anúncio. Mostra sempre os 4 canais (respeita período/tipo, ignora o foco).">
-              <DonutChart data={canalPie} h={220}/>
-            </Bloco>
+            </div>
           </div>
 
-          {/* CF × WL */}
-          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))',gap:12}}>
-            {[{lab:'Cliente Final',a:cfA,cor:'#6366f1',ic:<IUsers/>},{lab:'White Label',a:wlA,cor:'#f59e0b',ic:<IWL/>}].map(({lab,a,cor,ic})=>(
-              <div key={lab} className="card" style={{padding:18}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-                  <div style={{display:'flex',alignItems:'center',gap:8}}><span style={{background:cor+'22',color:cor,padding:7,borderRadius:8,display:'flex'}}>{ic}</span><span style={{fontSize:13,fontWeight:700,color:'#1e293b'}}>{lab}</span></div>
-                  <span style={{fontSize:22,fontWeight:800,color:'#0f172a'}}>{fmt(a.total)}</span>
+          {/* CF x WL */}
+          <div>
+            <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:12}}>
+              <h3 style={{fontSize:15,fontWeight:800,color:'#0f172a',margin:0}}>Cliente Final × White Label</h3>
+              <span style={{fontSize:12,color:'#94a3b8'}}>mix e quem converte melhor</span>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))',gap:12}}>
+              <div className="card" style={{padding:18}}>
+                <p style={{fontSize:10,fontWeight:800,letterSpacing:'.08em',textTransform:'uppercase',color:'#94a3b8',margin:'0 0 10px'}}>Participação no volume</p>
+                <div style={{display:'flex',height:38,borderRadius:9,overflow:'hidden'}}>
+                  <div style={{width:(cfA.total+wlA.total?cfA.total/(cfA.total+wlA.total)*100:0)+'%',background:'#6366f1',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:800,fontSize:12.5}}>{pct(F.total?cfA.total/(cfA.total+wlA.total)*100:0)}</div>
+                  <div style={{width:wlShare+'%',background:'#f59e0b',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:800,fontSize:12.5}}>{pct(wlShare)}</div>
                 </div>
-                <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:6}}>
-                  {[['Lead',a.lead,'#4338ca','#eef2ff'],['MQL',a.mql,'#7c3aed','#f5f3ff'],['SQL',a.sql,'#0e7490','#ecfeff'],['Ganho',a.ganho,'#047857','#ecfdf5'],['Perdido',a.perdido,'#b91c1c','#fef2f2']].map(([st,n,tc,bg])=>(
-                    <div key={st} style={{textAlign:'center',padding:'8px 3px',background:bg,borderRadius:8}}>
-                      <p style={{fontSize:9,fontWeight:700,color:tc,textTransform:'uppercase',margin:'0 0 3px'}}>{st}</p>
-                      <p style={{fontSize:17,fontWeight:800,color:'#0f172a',margin:0}}>{fmt(n)}</p>
-                      <p style={{fontSize:9,color:'#94a3b8',margin:'2px 0 0'}}>{pct(a.total?n/a.total*100:0)}</p>
-                    </div>
-                  ))}
+                <div style={{display:'flex',gap:16,fontSize:12,color:'#475569',marginTop:9}}>
+                  <span><span style={{display:'inline-block',width:9,height:9,borderRadius:'50%',background:'#6366f1',marginRight:6}}/>Cliente Final {fmt(cfA.total)}</span>
+                  <span><span style={{display:'inline-block',width:9,height:9,borderRadius:'50%',background:'#f59e0b',marginRight:6}}/>White Label {fmt(wlA.total)}</span>
                 </div>
               </div>
-            ))}
-          </div>
-
-          {/* Insights (resumo visível) */}
-          {ins.length>0 && (
-            <Bloco titulo="💡 Insights automáticos" sub="Leitura dos dados no período">
-              <div style={{display:'flex',flexDirection:'column',gap:8}}>
-                {ins.map((x,i)=>(
-                  <div key={i} style={{display:'flex',gap:10,alignItems:'flex-start',background:x.bg,border:'1px solid '+x.bd,borderRadius:9,padding:'10px 12px'}}>
-                    <span style={{fontSize:15,lineHeight:1.2}}>{x.ic}</span>
-                    <p style={{fontSize:12.5,color:x.cor,margin:0,fontWeight:500,lineHeight:1.5}}>{x.txt}</p>
+              <div className="card" style={{padding:18}}>
+                <p style={{fontSize:10,fontWeight:800,letterSpacing:'.08em',textTransform:'uppercase',color:'#94a3b8',margin:'0 0 10px'}}>Taxa de fechamento por tipo</p>
+                {[['Cliente Final',cfWin,'#6366f1'],['White Label',wlWin,'#f59e0b']].map(([nm,wv,c])=>{ const bw=Math.max(4,wv/(Math.max(cfWin,wlWin)||1)*100); return (
+                  <div key={nm} style={{margin:'10px 0'}}>
+                    <div style={{display:'flex',justifyContent:'space-between',fontSize:12.5,marginBottom:4}}><span style={{fontWeight:700}}>{nm}</span><span style={{fontWeight:800,color:c}}>{pct(wv)}</span></div>
+                    <div style={{background:'#eef0f5',borderRadius:7,height:14,overflow:'hidden'}}><div style={{width:bw+'%',height:'100%',background:c,borderRadius:7,transition:'width .6s'}}/></div>
                   </div>
-                ))}
+                ); })}
               </div>
-            </Bloco>
+            </div>
+          </div>
+
+          {/* TENDÊNCIA */}
+          {mesesTrend.length>0 && (
+          <div>
+            <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:12}}>
+              <h3 style={{fontSize:15,fontWeight:800,color:'#0f172a',margin:0}}>Tendência mensal</h3>
+              <span style={{fontSize:12,color:'#94a3b8'}}>leads válidos por mês de entrada</span>
+            </div>
+            <div className="card" style={{padding:'18px 18px 8px'}}>
+              <svg viewBox={`0 0 ${trW} ${trH}`} width="100%" style={{display:'block',overflow:'visible'}}>
+                <defs><linearGradient id="agr" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#4f46e5" stopOpacity=".20"/><stop offset="1" stopColor="#4f46e5" stopOpacity="0"/></linearGradient></defs>
+                {trGrid.map((g,i)=>(<g key={i}><line x1={trPl} y1={g.y} x2={trW-trPr} y2={g.y} stroke="#eef0f5" strokeWidth="1"/><text x={trPl-6} y={g.y+3} textAnchor="end" style={{fontSize:10.5,fill:'#94a3b8'}}>{fmt(Math.round(g.val))}</text></g>))}
+                {trArea && <path d={trArea} fill="url(#agr)"/>}
+                {trLine && <path d={trLine} fill="none" stroke="#4f46e5" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round"/>}
+                {mesesTrend.map((m,i)=>(<g key={i}><circle cx={trX(i)} cy={trY(m.v)} r="4.5" fill="#fff" stroke="#4f46e5" strokeWidth="2.5"/><text x={trX(i)} y={trH-8} textAnchor="middle" style={{fontSize:10.5,fill:'#94a3b8'}}>{m.mes}</text></g>))}
+              </svg>
+            </div>
+          </div>
+          )}
+
+          {/* CAMPANHAS */}
+          {topCamp.length>0 && (
+          <div>
+            <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:12}}>
+              <h3 style={{fontSize:15,fontWeight:800,color:'#0f172a',margin:0}}>Campanhas que mais geram</h3>
+              <span style={{fontSize:12,color:'#94a3b8'}}>top por volume · com taxa de fechamento</span>
+            </div>
+            <div className="card" style={{padding:'6px 18px 14px'}}>
+              <div style={{overflowX:'auto'}}>
+                <table style={{width:'100%',borderCollapse:'collapse',whiteSpace:'nowrap'}}>
+                  <thead><tr>{['Campanha / conteúdo','Leads','','Fecha'].map((h,i)=>(<th key={i} style={{fontSize:10,fontWeight:800,letterSpacing:'.05em',textTransform:'uppercase',color:'#94a3b8',textAlign:i===0?'left':'right',padding:'9px 9px'}}>{h}</th>))}</tr></thead>
+                  <tbody>
+                    {topCamp.map((c,i)=>{ const w=c.total/maxCamp*100; return (
+                      <tr key={i}>
+                        <td style={{padding:'8px 9px',fontSize:12.5,borderTop:'1px solid #eef0f5',fontWeight:600,color:'#0f172a'}}>{c.conteudo}</td>
+                        <td style={{padding:'8px 9px',fontSize:12.5,borderTop:'1px solid #eef0f5',textAlign:'right',fontVariantNumeric:'tabular-nums'}}>{fmt(c.total)}</td>
+                        <td style={{padding:'8px 9px',borderTop:'1px solid #eef0f5',width:'32%',minWidth:120}}><div style={{background:'#eef0f5',borderRadius:5,height:9,overflow:'hidden'}}><div style={{width:w+'%',height:'100%',background:winCor(c.win),borderRadius:5}}/></div></td>
+                        <td style={{padding:'8px 9px',borderTop:'1px solid #eef0f5',textAlign:'right'}}><span style={{fontSize:11,fontWeight:800,borderRadius:999,padding:'2px 9px',color:winCor(c.win),background:winBg(c.win)}}>{pct(c.win)}</span></td>
+                      </tr>
+                    ); })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          )}
+
+          {/* INSIGHTS ESTRATÉGICOS */}
+          {insE.length>0 && (
+          <div>
+            <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:12}}>
+              <h3 style={{fontSize:15,fontWeight:800,color:'#0f172a',margin:0}}>Insights estratégicos</h3>
+              <span style={{fontSize:12,color:'#94a3b8'}}>leitura acionável dos dados</span>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))',gap:12}}>
+              {insE.map((x,i)=>(
+                <div key={i} className="card" style={{display:'flex',gap:12,padding:'15px 16px'}}>
+                  <div style={{width:34,height:34,borderRadius:9,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:17,background:x.bg}}>{x.ic}</div>
+                  <div><h4 style={{fontSize:13,fontWeight:800,margin:'1px 0 3px',color:'#0f172a'}}>{x.h}</h4><p style={{margin:0,fontSize:12.5,color:'#475569',lineHeight:1.5}}>{x.p}<span style={{display:'block',marginTop:6,fontSize:11.5,fontWeight:700,color:x.cor}}>→ {x.act}</span></p></div>
+                </div>
+              ))}
+            </div>
+          </div>
           )}
 
           {/* Toggle: análises detalhadas */}
           <button onClick={()=>setShowDet(v=>!v)}
             style={{display:'flex',alignItems:'center',gap:8,background:'#fff',border:'1px solid #e2e8f0',borderRadius:10,padding:'11px 16px',cursor:'pointer',fontSize:13,fontWeight:700,color:'#475569',width:'100%',justifyContent:'center'}}>
             <span style={{transition:'transform .2s',transform:showDet?'rotate(90deg)':'none',display:'inline-block'}}>▸</span>
-            {showDet?'Ocultar análises detalhadas':'Ver análises detalhadas (mês a mês, conversões, White Label, conferências, recentes)'}
+            {showDet?'Ocultar análises detalhadas':'Ver análises detalhadas (tabela mês a mês, conferências, White Label, recentes)'}
           </button>
 
           {/* Análises detalhadas (recolhíveis) */}
