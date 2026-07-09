@@ -462,6 +462,8 @@
     const AbaLeads=({de,ate,tipo,api})=>{
       const [origem,setOrigem]=useState('all');           // foco do resumo do topo
       const [showDet,setShowDet]=useState(false);         // recolher análises detalhadas
+      const [campFront,setCampFront]=useState('all');     // frente das campanhas (Pago/Orgânico/Novos)
+      const [recPage,setRecPage]=useState(0);             // paginação da lista de contatos
       const ld = api?.leads || {};
       const hasLeads = (ld.porMes||[]).length > 0;
 
@@ -598,11 +600,13 @@
       const campMap = {};
       (ld.porConteudo||[]).filter(c=>inRange(c.mesKey)).forEach(c=>{
         const nome=(c.conteudo||'').trim(); if(GROUP_LBL.indexOf(nome)>=0) return;
-        const o=campMap[nome]||(campMap[nome]={conteudo:nome,total:0,ganho:0,perdido:0});
+        const o=campMap[nome]||(campMap[nome]={conteudo:nome,tipoOrigem:c.tipoOrigem,total:0,ganho:0,perdido:0});
         o.total+=pickTot(c); o.ganho+=pick(c,'ganho'); o.perdido+=pick(c,'perdido');
       });
-      const topCamp = Object.values(campMap).map(c=>({...c,win:winRate(c.ganho,c.perdido)}))
-        .filter(c=>c.total>0).sort((a,b)=>b.total-a.total).slice(0,7);
+      const campAll = Object.values(campMap).map(c=>({...c,win:winRate(c.ganho,c.perdido)})).filter(c=>c.total>0);
+      const campTop = [...campAll].sort((a,b)=>b.total-a.total);   // ranking geral (p/ insights)
+      const CAMP_FRENTES = [['all','Todas'],['pago','Pago / Ads'],['organico','Orgânico'],['novos_canais','Novos Canais']];
+      const topCamp = campAll.filter(c=> campFront==='all' || c.tipoOrigem===campFront).sort((a,b)=>b.total-a.total).slice(0,8);
       const maxCamp = Math.max(1, ...topCamp.map(c=>c.total));
 
       // insights estratégicos (acionáveis)
@@ -611,7 +615,7 @@
       if(bestCh) insE.push({ic:'🌱',bg:'#ecfdf5',cor:'#059669',h:`${bestCh.label} converte ${pct(bestCh.win)} — o melhor canal`,p:`Mas é só ${pct(bestCh.share)} do volume. Tem espaço pra escalar.`,act:`Investir mais em ${bestCh.label}`});
       if(semOrig.total>0) insE.push({ic:'🚨',bg:'#fef2f2',cor:'#dc2626',h:`${pct(semOrig.share)} dos leads entram "Sem origem"`,p:`E fecham só ${pct(semOrig.win)}. Metade da base não é rastreável — não dá pra otimizar o que não se mede.`,act:'Prioridade #1: rastreio (UTM/etiqueta na entrada)'});
       if(cfA.total>0 && wlA.total>0) insE.push({ic:'⚖️',bg:'#eef2ff',cor:'#4338ca',h:`${wlWin>cfWin?'White Label':'Cliente Final'} fecha melhor (${pct(Math.max(cfWin,wlWin))} vs ${pct(Math.min(cfWin,wlWin))})`,p:`White Label é ${pct(wlShare)} do volume gerado — o perfil que mais entra.`,act:'Dobrar a aposta no perfil que mais converte'});
-      if(topCamp[0]){ const b0=topCamp[0], bw=[...topCamp].filter(c=>c.total>=100).sort((a,b)=>b.win-a.win)[0];
+      if(campTop[0]){ const b0=campTop[0], bw=[...campTop].filter(c=>c.total>=100).sort((a,b)=>b.win-a.win)[0];
         insE.push({ic:'🎯',bg:'#fffbeb',cor:'#d97706',h:`"${b0.conteudo}" é a que mais gera`,p:`${fmt(b0.total)} leads, fecha ${pct(b0.win)}.${bw&&bw.conteudo!==b0.conteudo?` "${bw.conteudo}" fecha ${pct(bw.win)}.`:''}`,act:'Realocar verba pras de maior fechamento'}); }
 
       return (
@@ -753,13 +757,19 @@
           )}
 
           {/* CAMPANHAS */}
-          {topCamp.length>0 && (
+          {campAll.length>0 && (
           <div>
-            <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:12}}>
+            <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:12,flexWrap:'wrap'}}>
               <h3 style={{fontSize:15,fontWeight:800,color:'#0f172a',margin:0}}>Campanhas que mais geram</h3>
               <span style={{fontSize:12,color:'#94a3b8'}}>top por volume · com taxa de fechamento</span>
+              <div style={{marginLeft:'auto',display:'inline-flex',background:'#f1f5f9',borderRadius:8,padding:3,gap:2,flexWrap:'wrap'}}>
+                {CAMP_FRENTES.map(([v,l])=>(
+                  <button key={v} onClick={()=>setCampFront(v)} className={campFront===v?'pill-a':'pill-i'} style={{padding:'4px 10px',borderRadius:6,border:'none',cursor:'pointer',fontSize:11.5,fontWeight:600,background:campFront===v?'#fff':'none'}}>{l}</button>
+                ))}
+              </div>
             </div>
             <div className="card" style={{padding:'6px 18px 14px'}}>
+              {topCamp.length===0 && <p style={{fontSize:12.5,color:'#94a3b8',padding:'12px 2px',margin:0}}>Nenhuma campanha rastreada nessa frente no período.</p>}
               <div style={{overflowX:'auto'}}>
                 <table style={{width:'100%',borderCollapse:'collapse',whiteSpace:'nowrap'}}>
                   <thead><tr>{['Campanha / conteúdo','Leads','','Fecha'].map((h,i)=>(<th key={i} style={{fontSize:10,fontWeight:800,letterSpacing:'.05em',textTransform:'uppercase',color:'#94a3b8',textAlign:i===0?'left':'right',padding:'9px 9px'}}>{h}</th>))}</tr></thead>
@@ -796,6 +806,41 @@
             </div>
           </div>
           )}
+
+          {/* CONTATOS — lista paginada */}
+          {recentes.length>0 && (()=>{ const PER=10; const pages=Math.max(1,Math.ceil(recentes.length/PER)); const pg=Math.min(recPage,pages-1); const slice=recentes.slice(pg*PER,pg*PER+PER); return (
+          <div>
+            <div style={{display:'flex',alignItems:'baseline',gap:10,marginBottom:12}}>
+              <h3 style={{fontSize:15,fontWeight:800,color:'#0f172a',margin:0}}>Contatos</h3>
+              <span style={{fontSize:12,color:'#94a3b8'}}>{fmt(recentes.length)} mais recentes do recorte</span>
+            </div>
+            <div className="card" style={{padding:'6px 18px 12px'}}>
+              <div style={{overflowX:'auto'}}>
+                <table style={{width:'100%',borderCollapse:'collapse',whiteSpace:'nowrap'}}>
+                  <thead><tr>{['Nome','Canal','Tipo','Etapa','Data'].map((h,i)=>(<th key={i} style={{fontSize:10,fontWeight:800,letterSpacing:'.05em',textTransform:'uppercase',color:'#94a3b8',textAlign:i>=3?'right':'left',padding:'9px 9px'}}>{h}</th>))}</tr></thead>
+                  <tbody>
+                    {slice.map((l,i)=>(
+                      <tr key={i}>
+                        <td style={{padding:'8px 9px',fontSize:12.5,borderTop:'1px solid #eef0f5',fontWeight:600,color:'#0f172a'}}>{l.nome||'—'}</td>
+                        <td style={{padding:'8px 9px',fontSize:12.5,borderTop:'1px solid #eef0f5',color:'#475569'}}>{l.canal}</td>
+                        <td style={{padding:'8px 9px',borderTop:'1px solid #eef0f5'}}><span className={l.tipo==='white_label'?'badge-amber':'badge-indigo'}>{l.tipo==='white_label'?'White Label':'Cliente Final'}</span></td>
+                        <td style={{padding:'8px 9px',borderTop:'1px solid #eef0f5',textAlign:'right'}}><span className={l.isGanho?'badge-green':l.isPerdido?'badge-red':(l.isSql||l.isMql)?'badge-indigo':'badge-gray'}>{l.isGanho?'GANHO':l.isPerdido?'PERDIDO':l.isSql?'SQL':l.isMql?'MQL':'LEAD'}</span></td>
+                        <td style={{padding:'8px 9px',fontSize:12.5,borderTop:'1px solid #eef0f5',textAlign:'right',color:'#475569'}}>{l.data}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:10,fontSize:12,color:'#475569'}}>
+                <span>Página <b>{pg+1}</b> de {pages}</span>
+                <div style={{display:'flex',gap:8}}>
+                  <button disabled={pg<=0} onClick={()=>setRecPage(pg-1)} style={{padding:'5px 12px',borderRadius:7,border:'1px solid #e2e8f0',background:'#fff',cursor:pg<=0?'default':'pointer',opacity:pg<=0?.5:1,fontSize:12,fontWeight:600,color:'#475569'}}>← Anterior</button>
+                  <button disabled={pg>=pages-1} onClick={()=>setRecPage(pg+1)} style={{padding:'5px 12px',borderRadius:7,border:'1px solid #e2e8f0',background:'#fff',cursor:pg>=pages-1?'default':'pointer',opacity:pg>=pages-1?.5:1,fontSize:12,fontWeight:600,color:'#475569'}}>Próxima →</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          ); })()}
 
           {/* Toggle: análises detalhadas */}
           <button onClick={()=>setShowDet(v=>!v)}
