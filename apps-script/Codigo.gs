@@ -1,7 +1,7 @@
 const GSC_SITE_URL    = 'sc-domain:helenacrm.com';
 const GA4_PROPERTY_ID = '505588648';
 const DIAS            = 30;
-const SHEET_ID        = '1OAwbDeI03w898KpRPOui7IesjXWAwWlEQGPH9LjBOYk';
+const SHEET_ID        = '1Ord5aH3rbLFtWmx6BuBoXtM47WfHhi3BB-5gE_EReRo';
 const LEADS_SHEET_GID = 1698310909;
 
 /* ─────────────────────────────────────────────
@@ -10,6 +10,23 @@ const LEADS_SHEET_GID = 1698310909;
 function doGet(e) {
   const output = ContentService.createTextOutput();
   output.setMimeType(ContentService.MimeType.JSON);
+
+  // === IA de Estratégia — ?estrategia=1 (roda nova) ou ?estrategia=cache (lê a salva) ===
+  if (e && e.parameter && e.parameter.estrategia) {
+    const _tk = PropertiesService.getScriptProperties().getProperty('API_TOKEN');
+    if (!_tk || (e.parameter.token || '') !== _tk) {
+      output.setContent(JSON.stringify({ erro: 'Token inválido.' })); return output;
+    }
+    try {
+      const _r = (e.parameter.estrategia === 'cache')
+        ? lerEstrategiaSalva()
+        : gerarEstrategia(e.parameter.dias ? parseInt(e.parameter.dias) : 90);
+      output.setContent(JSON.stringify(_r));
+    } catch (err) {
+      output.setContent(JSON.stringify({ erro: String(err) }));
+    }
+    return output;
+  }
 
   // ── Proteção por token ──────────────────────────
   const props = PropertiesService.getScriptProperties();
@@ -580,4 +597,105 @@ function buscarSEMrush() {
     Logger.log('Erro SEMrush: ' + err.message);
     return { erro: err.message, dominio:{ keywords:0, traffic:0 }, keywords:[], concorrentes:[], paginas:[] };
   }
+}
+
+/* ─────────────────────────────────────────────
+   IA DE ESTRATÉGIA (Claude / Anthropic)
+   Analisa GSC + GA4 + SEMrush e devolve o relatório em Markdown.
+   Requer a propriedade de script ANTHROPIC_KEY.
+───────────────────────────────────────────── */
+function buscarEstrategiaIA(dados) {
+  const KEY = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_KEY');
+  if (!KEY) return '⚠️ Configure a propriedade de script ANTHROPIC_KEY com a chave da Anthropic.';
+
+  const MODELO = 'claude-opus-4-8'; // p/ gastar ~40% menos, troque por 'claude-sonnet-5'
+
+  const gsc = dados.gsc || {}, ga4 = dados.ga4 || {}, sm = dados.semrush || {};
+  const kws = gsc.keywords || [];
+  const porCli = kws.slice().sort(function(a,b){ return (b.cliques||0)-(a.cliques||0); }).slice(0,30);
+  const porImp = kws.slice().sort(function(a,b){ return (b.impressoes||0)-(a.impressoes||0); }).slice(0,20);
+  const mini = function(k){ return { q:k.query, cli:k.cliques, imp:k.impressoes, ctr:k.ctr, pos:k.posicao }; };
+
+  const resumo = {
+    gsc: {
+      totais: gsc.totais,
+      historicoDiario: gsc.historico,
+      topPorCliques: porCli.map(mini),
+      topPorImpressoes: porImp.map(mini),
+      paginas: (gsc.paginas || []).slice(0,15),
+    },
+    ga4: { totais: ga4.totais, canais: ga4.canais, origens: (ga4.origens || []).slice(0,15) },
+    semrush: { dominio: sm.dominio, keywords: (sm.keywords || []).slice(0,30), concorrentes: sm.concorrentes },
+  };
+
+  const prompt =
+    'Você é o Head de Growth e SEO da HelenaCRM — SaaS brasileiro de CRM e atendimento no WhatsApp, com produto White Label para agências/parceiros revenderem com a própria marca. Concorrentes no orgânico: z-api.io, uzapi, w-api, chatsac.\n\n' +
+    'Seu papel é ser o BRAÇO DIREITO DE PERFORMANCE ORGÂNICA da equipe: analítico, direto, prático e estratégico. Traga PROATIVAMENTE oportunidades, alertas e insights relevantes mesmo que não tenham sido pedidos — desde que ajudem a performance orgânica da Helena.\n\n' +
+    'Analise os dados REAIS abaixo (Google Search Console, Google Analytics 4 e SEMrush) e escreva um relatório executivo, em português do Brasil, em Markdown, conciso e escaneável.\n\n' +
+    'Estrutura:\n' +
+    '## 📍 Diagnóstico rápido (2-3 frases)\n' +
+    '## 🚨 Alertas & oscilações (quedas/picos anômalos no histórico diário; problema técnico como a mesma página ranqueando em www E sem-www dividindo autoridade; qualquer coisa estranha)\n' +
+    '## 💰 Oportunidades priorizadas (keywords/páginas com muita impressão e pouco clique; posições de borda 5-15 com volume; cite os números)\n' +
+    '## 📈 Termos & canais em destaque\n' +
+    '## 🏆 Concorrência\n' +
+    '## ✅ Plano de ação priorizado (itens do maior impacto ao menor, marcando esforço: Rápido / Médio / Alto)\n\n' +
+    'Regras: baseie TUDO nos números fornecidos (cite cliques, impressões, CTR em %, posição). NÃO invente. CTR está em %; posição é média (menor = melhor, 1 = topo). Priorize por impacto. Seja específico e acionável, sem generalidades. Responda DIRETO com o relatório, sem raciocínio à parte.\n\n' +
+    'DADOS:\n' + JSON.stringify(resumo);
+
+  const resp = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
+    method: 'post',
+    contentType: 'application/json',
+    muteHttpExceptions: true,
+    headers: { 'x-api-key': KEY, 'anthropic-version': '2023-06-01' },
+    payload: JSON.stringify({
+      model: MODELO,
+      max_tokens: 6000,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+  });
+
+  const code = resp.getResponseCode();
+  const body = JSON.parse(resp.getContentText());
+  if (code !== 200) return '⚠️ Erro da IA (' + code + '): ' + (body && body.error ? body.error.message : resp.getContentText().slice(0,300));
+  return (body.content || []).filter(function(b){ return b.type === 'text'; }).map(function(b){ return b.text; }).join('\n');
+}
+
+/* Gera a análise, GUARDA (com data) e devolve. Guarda em pedaços p/ caber no limite de 9KB por propriedade. */
+function gerarEstrategia(dias) {
+  var dados = { gsc: buscarGSC(dias, null, null), ga4: buscarGA4(dias, null, null), semrush: buscarSEMrush() };
+  var txt = buscarEstrategiaIA(dados);
+  var quando = new Date().toISOString();
+  var props = PropertiesService.getScriptProperties();
+  props.setProperty('IA_DATA', quando);
+  ['IA_TXT_0','IA_TXT_1','IA_TXT_2','IA_TXT_3'].forEach(function(k){ props.deleteProperty(k); });
+  var partes = String(txt).match(/[\s\S]{1,8000}/g) || [''];
+  var n = Math.min(partes.length, 4);
+  for (var i = 0; i < n; i++) props.setProperty('IA_TXT_' + i, partes[i]);
+  props.setProperty('IA_PARTES', String(n));
+  return { estrategia: txt, atualizado: quando, auto: false };
+}
+
+/* Lê a análise salva (sem chamar a IA) — usado quando o painel abre. */
+function lerEstrategiaSalva() {
+  var props = PropertiesService.getScriptProperties();
+  var n = parseInt(props.getProperty('IA_PARTES') || '0', 10);
+  if (!n) return { estrategia: '', atualizado: null, auto: true };
+  var txt = '';
+  for (var i = 0; i < n; i++) txt += (props.getProperty('IA_TXT_' + i) || '');
+  return { estrategia: txt, atualizado: props.getProperty('IA_DATA'), auto: true };
+}
+
+/* Alvo do gatilho semanal (toda segunda). */
+function rodarEstrategiaSemanal() {
+  gerarEstrategia(90);
+}
+
+/* Rode UMA vez (menu Executar) p/ ligar o gatilho de toda segunda ~7h. */
+function instalarGatilhoSemanal() {
+  var gs = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < gs.length; i++) {
+    if (gs[i].getHandlerFunction() === 'rodarEstrategiaSemanal') ScriptApp.deleteTrigger(gs[i]);
+  }
+  ScriptApp.newTrigger('rodarEstrategiaSemanal').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(7).create();
+  return 'Gatilho semanal instalado (toda segunda ~7h).';
 }
