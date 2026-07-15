@@ -616,14 +616,19 @@ function buscarEstrategiaIA(dados) {
   const porImp = kws.slice().sort(function(a,b){ return (b.impressoes||0)-(a.impressoes||0); }).slice(0,20);
   const mini = function(k){ return { q:k.query, cli:k.cliques, imp:k.impressoes, ctr:k.ctr, pos:k.posicao }; };
 
+  // compara com o período igual anterior (páginas/queries que subiram/caíram + o pico) — função lá embaixo
+  var dias = (gsc.historico || []).length || 90;
+  var comparativo = buscarGSCComparativo(gsc, dias);
+
   const resumo = {
     gsc: {
       totais: gsc.totais,
       historicoDiario: gsc.historico,
       topPorCliques: porCli.map(mini),
       topPorImpressoes: porImp.map(mini),
-      paginas: (gsc.paginas || []).slice(0,15),
+      paginas: (gsc.paginas || []).slice(0,25),
     },
+    comparativoPeriodoAnterior: comparativo,
     ga4: { totais: ga4.totais, canais: ga4.canais, origens: (ga4.origens || []).slice(0,15) },
     semrush: { dominio: sm.dominio, keywords: (sm.keywords || []).slice(0,30), concorrentes: sm.concorrentes },
   };
@@ -632,11 +637,16 @@ function buscarEstrategiaIA(dados) {
     'Você é o Head de Growth e SEO da HelenaCRM — SaaS brasileiro de CRM e atendimento no WhatsApp, com produto White Label para agências/parceiros revenderem com a própria marca. Concorrentes no orgânico: z-api.io, uzapi, w-api, chatsac.\n\n' +
     'Seu papel é ser o BRAÇO DIREITO DE PERFORMANCE ORGÂNICA da equipe: analítico, direto, prático e estratégico. Traga PROATIVAMENTE oportunidades, alertas e insights relevantes mesmo que não tenham sido pedidos — desde que ajudem a performance orgânica da Helena.\n\n' +
     'Analise os dados REAIS abaixo (Google Search Console, Google Analytics 4 e SEMrush) e escreva um relatório executivo, em português do Brasil, em Markdown, conciso e escaneável.\n\n' +
-    'Estrutura:\n' +
+    'Você TEM os dados do período atual E a comparação com o período igual anterior (campo comparativoPeriodoAnterior): queriesEmAlta/queriesEmQueda (variação de cliques vs período anterior), paginasPerdendoPos/paginasGanhandoPos (variação de posição — dPos positivo = MELHOROU, negativo = PIOROU) e pico (dia de maior tráfego + queries desse dia + média diária). USE esses dados.\n\n' +
+    'Estrutura (use tabelas quando ajudar; cite SEMPRE os números reais):\n' +
     '## 📍 Diagnóstico rápido (2-3 frases)\n' +
-    '## 🚨 Alertas & oscilações (quedas/picos anômalos no histórico diário; problema técnico como a mesma página ranqueando em www E sem-www dividindo autoridade; qualquer coisa estranha)\n' +
-    '## 💰 Oportunidades priorizadas (keywords/páginas com muita impressão e pouco clique; posições de borda 5-15 com volume; cite os números)\n' +
-    '## 📈 Termos & canais em destaque\n' +
+    '## 📊 Números principais (KPIs mais importantes com valor E variação vs período anterior: cliques, impressões, CTR, posição média, sessões orgânicas)\n' +
+    '## 🔎 Picos & anomalias (EXPLIQUE o pico de tráfego: qual dia, quais queries dispararam nesse dia vs a média, e HIPÓTESES do porquê; aponte qualquer busca que cresceu fora do normal)\n' +
+    '## 📉 Páginas perdendo/ganhando posição (liste as que CAÍRAM e as que SUBIRAM de posição, com números; para cada queda, possíveis causas e o que fazer p/ recuperar)\n' +
+    '## 🚨 Alertas & oscilações (quedas anômalas; problema técnico como a mesma página em www E sem-www dividindo autoridade; qualquer coisa estranha)\n' +
+    '## 💰 Oportunidades priorizadas (keywords/páginas com muita impressão e pouco clique; posições de borda 5-15 com volume que dá p/ empurrar pro topo; cite números)\n' +
+    '## 🔍 Otimizações por página (escolha as páginas mais importantes e diga, POR PÁGINA, o que otimizar: título, meta description, conteúdo, canonical, links internos; esforço Rápido/Médio/Alto)\n' +
+    '## ✍️ Lacunas de conteúdo — pautas de blog (sugira posts NOVOS a criar; p/ cada um: tema/título, keyword-alvo com volume e por que vale — baseie em keywords de volume mal posicionadas/ausentes e no que os concorrentes cobrem)\n' +
     '## 🏆 Concorrência\n' +
     '## ✅ Plano de ação priorizado (itens do maior impacto ao menor, marcando esforço: Rápido / Médio / Alto)\n\n' +
     'Regras: baseie TUDO nos números fornecidos (cite cliques, impressões, CTR em %, posição). NÃO invente. CTR está em %; posição é média (menor = melhor, 1 = topo). Priorize por impacto. Seja específico e acionável, sem generalidades. Responda DIRETO com o relatório, sem raciocínio à parte.\n\n' +
@@ -698,4 +708,61 @@ function instalarGatilhoSemanal() {
   }
   ScriptApp.newTrigger('rodarEstrategiaSemanal').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(7).create();
   return 'Gatilho semanal instalado (toda segunda ~7h).';
+}
+
+/* Compara o período atual com o ANTERIOR (mesmo tamanho) p/ achar:
+   - queries em alta/queda (variação de cliques)
+   - páginas perdendo/ganhando posição
+   - o dia de PICO e as queries desse dia (p/ explicar o pico)
+   Recebe o gsc atual (de buscarGSC) p/ não refazer as buscas do período atual. */
+function buscarGSCComparativo(gscAtual, dias) {
+  try {
+    var token = ScriptApp.getOAuthToken();
+    var siteEnc = encodeURIComponent(GSC_SITE_URL);
+    var url = 'https://www.googleapis.com/webmasters/v3/sites/' + siteEnc + '/searchAnalytics/query';
+    var fmt = function(d){ return d.toISOString().slice(0,10); };
+    var opts = function(body){ return { method:'post', contentType:'application/json', headers:{Authorization:'Bearer '+token}, payload:JSON.stringify(body), muteHttpExceptions:true }; };
+    var rows = function(ini, fim, dim, lim){
+      var r = UrlFetchApp.fetch(url, opts({ startDate:fmt(ini), endDate:fmt(fim), dimensions:[dim], rowLimit:lim }));
+      return (JSON.parse(r.getContentText()).rows || []);
+    };
+    var hoje = new Date();
+    var iniAtual = new Date(hoje); iniAtual.setDate(iniAtual.getDate() - dias);
+    var fimAnt = new Date(iniAtual); fimAnt.setDate(fimAnt.getDate() - 1);
+    var iniAnt = new Date(fimAnt); iniAnt.setDate(iniAnt.getDate() - dias);
+
+    var mapear = function(rs){ var m={}; rs.forEach(function(r){ m[r.keys[0]]={cli:r.clicks, imp:r.impressions, pos:r.position}; }); return m; };
+    var qAnt = mapear(rows(iniAnt, fimAnt, 'query', 500));
+    var pAnt = mapear(rows(iniAnt, fimAnt, 'page', 100));
+    var top = function(arr, cmp, n){ return arr.slice().sort(cmp).slice(0, n); };
+
+    var curKw = gscAtual.keywords || [];
+    var qMov = curKw.map(function(k){ var a=qAnt[k.query];
+      return { q:k.query, cli:k.cliques, imp:k.impressoes, pos:k.posicao, dCli:a?(k.cliques-a.cli):k.cliques, dPos:a?+(a.pos-k.posicao).toFixed(1):null, novo:!a }; });
+    var queriesEmAlta  = top(qMov.filter(function(x){return x.dCli>0;}), function(a,b){return b.dCli-a.dCli;}, 12);
+    var queriesEmQueda = top(qMov.filter(function(x){return x.dCli<0;}), function(a,b){return a.dCli-b.dCli;}, 10);
+
+    var curPg = gscAtual.paginas || [];
+    var pMov = curPg.map(function(p){ var a=pAnt[p.url];
+      return { url:p.url, cli:p.cliques, imp:p.impressoes, pos:p.posicao, dPos:a?+(a.pos-p.posicao).toFixed(1):null, dCli:a?(p.cliques-a.cli):p.cliques, nova:!a }; });
+    var paginasPerdendoPos  = top(pMov.filter(function(x){return x.dPos!==null && x.dPos<-0.4;}), function(a,b){return a.dPos-b.dPos;}, 10);
+    var paginasGanhandoPos  = top(pMov.filter(function(x){return x.dPos!==null && x.dPos>0.4;}), function(a,b){return b.dPos-a.dPos;}, 10);
+
+    // pico = dia de mais cliques no histórico atual → busca as queries desse dia
+    var hist = gscAtual.historico || [], pico = null;
+    hist.forEach(function(h){ if(!pico || h.cliques>pico.cliques) pico=h; });
+    var picoQueries = [];
+    if (pico) {
+      var pr = UrlFetchApp.fetch(url, opts({ startDate:pico.data, endDate:pico.data, dimensions:['query'], rowLimit:15 }));
+      picoQueries = (JSON.parse(pr.getContentText()).rows || []).map(function(r){ return { q:r.keys[0], cli:r.clicks, imp:r.impressions }; });
+    }
+    var mediaDia = hist.length ? Math.round(hist.reduce(function(s,h){return s+h.cliques;},0)/hist.length) : 0;
+
+    return {
+      periodoAtual: fmt(iniAtual)+' a '+fmt(hoje), periodoAnterior: fmt(iniAnt)+' a '+fmt(fimAnt),
+      queriesEmAlta: queriesEmAlta, queriesEmQueda: queriesEmQueda,
+      paginasPerdendoPos: paginasPerdendoPos, paginasGanhandoPos: paginasGanhandoPos,
+      pico: pico ? { data: pico.data, cliques: pico.cliques, mediaDiaria: mediaDia, topQueries: picoQueries } : null,
+    };
+  } catch (err) { return { erro: String(err) }; }
 }
