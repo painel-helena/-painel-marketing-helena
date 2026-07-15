@@ -1788,7 +1788,7 @@
     };
 
     /* ══════════════════════════════════════════════
-       ABA 5 — ESTRATÉGIA & IA
+       ABA 5 — ESTRATÉGIA E INSIGHTS
     ══════════════════════════════════════════════ */
 
     const ScoreBar=({score,status})=>{
@@ -2517,7 +2517,7 @@
           <div style={{background:'#fff',border:'1px solid #e2e8f0',borderRadius:14,padding:'18px 20px',boxShadow:'0 1px 3px rgba(0,0,0,.04)'}}>
             <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',marginBottom:10}}>
               <span style={{fontSize:20}}>🤖</span>
-              <span style={{fontSize:16,fontWeight:800,color:'#0f172a'}}>Estratégia com IA</span>
+              <span style={{fontSize:16,fontWeight:800,color:'#0f172a'}}>Estratégia e insights</span>
               {iaData&&<span style={{fontSize:11,background:'#eef2ff',color:'#4338ca',padding:'3px 10px',borderRadius:20,fontWeight:600}}>Atualizada em {fmtIA(iaData)}</span>}
               <button onClick={rodarIA} disabled={iaStatus==='rodando'} style={{marginLeft:'auto',fontSize:12,fontWeight:600,color:'#fff',background:iaStatus==='rodando'?'#94a3b8':'#4f46e5',border:'none',borderRadius:8,padding:'8px 14px',cursor:iaStatus==='rodando'?'default':'pointer'}}>
                 {iaStatus==='rodando'?'Analisando…':'🔄 Analisar agora'}
@@ -3192,7 +3192,7 @@
        APP PRINCIPAL
     ══════════════════════════════════════════════ */
 
-    const ABAS=[{id:'leads',label:'Leads',ic:'👥'},{id:'seo',label:'SEO',ic:'🔍'},{id:'funil',label:'Funil',ic:'📊'},{id:'estrategia',label:'Estratégia & IA',ic:'🤖'}];
+    const ABAS=[{id:'leads',label:'Leads',ic:'👥'},{id:'seo',label:'SEO',ic:'🔍'},{id:'funil',label:'Funil',ic:'📊'},{id:'estrategia',label:'Estratégia e insights',ic:'🤖'}];
 
     // Período inicial: últimos 30 dias
     const makeDate=(diasAtras)=>{ const d=new Date(TODAY); d.setDate(d.getDate()-diasAtras); return d; };
