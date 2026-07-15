@@ -2060,6 +2060,28 @@
           .catch(()=>setIaStatus('erro'));
       };
       const fmtIA=(iso)=>{ if(!iso)return''; try{ return new Date(iso).toLocaleString('pt-BR',{day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}); }catch(e){ return ''; } };
+      // quebra o relatório (markdown) em seções por título "## " — cada uma vira um card
+      const parseSecoes=(md)=>{
+        if(!md) return [];
+        const secoes=[]; let atual={titulo:'',corpo:''};
+        String(md).split('\n').forEach(l=>{
+          const m=l.match(/^##\s+(.*)/);
+          if(m){ secoes.push(atual); atual={titulo:m[1].trim(),corpo:''}; }
+          else { atual.corpo+=l+'\n'; }
+        });
+        secoes.push(atual);
+        return secoes.filter(s=>s.titulo||s.corpo.trim());
+      };
+      const corSecao=(t)=>{ const s=(t||'').toLowerCase();
+        if(s.includes('alerta')||s.includes('oscila')) return {bg:'#fef2f2',cor:'#b91c1c',barra:'#ef4444'};
+        if(s.includes('oportunidade')) return {bg:'#f0fdf4',cor:'#15803d',barra:'#22c55e'};
+        if(s.includes('plano')||s.includes('ação')||s.includes('acao')) return {bg:'#eef2ff',cor:'#4338ca',barra:'#6366f1'};
+        if(s.includes('seo')) return {bg:'#eff6ff',cor:'#1d4ed8',barra:'#3b82f6'};
+        if(s.includes('número')||s.includes('numero')||s.includes('kpi')||s.includes('dados')) return {bg:'#f5f3ff',cor:'#6d28d9',barra:'#8b5cf6'};
+        if(s.includes('termo')||s.includes('canai')||s.includes('canal')) return {bg:'#f0f9ff',cor:'#0369a1',barra:'#0ea5e9'};
+        if(s.includes('concorr')) return {bg:'#fff7ed',cor:'#c2410c',barra:'#f97316'};
+        return {bg:'#f8fafc',cor:'#0f172a',barra:'#94a3b8'};
+      };
       const toMK=d=>d?String(d.getFullYear())+String(d.getMonth()+1).padStart(2,'0'):'';
       const startKey=toMK(de);
       const endKey=toMK(ate);
@@ -2527,7 +2549,20 @@
             {iaStatus==='rodando'&&<div style={{fontSize:13,color:'#6366f1',marginBottom:8}}>⏳ A IA está analisando GSC, GA4 e SEMrush… leva ~1 minuto.</div>}
             {iaStatus==='vazio'&&<div style={{fontSize:13,color:'#64748b'}}>Ainda não há análise gerada. Clique em <strong>"Analisar agora"</strong> — ou aguarde a rodada automática de toda segunda-feira.</div>}
             {iaStatus==='erro'&&<div style={{fontSize:13,color:'#ef4444'}}>Não consegui carregar a análise. Tente <strong>"Analisar agora"</strong>.</div>}
-            {iaReport&&(iaStatus==='ok'||iaStatus==='rodando')&&<div className="ia-md" dangerouslySetInnerHTML={{__html:(window.marked?window.marked.parse(iaReport):iaReport)}} />}
+            {iaReport&&(iaStatus==='ok'||iaStatus==='rodando')&&(
+              <div style={{display:'flex',flexDirection:'column',gap:12}}>
+                {parseSecoes(iaReport).map((sec,i)=>{
+                  if(!sec.titulo){ return <div key={i} className="ia-md" style={{fontSize:12.5,color:'#64748b'}} dangerouslySetInnerHTML={{__html:window.marked?window.marked.parse(sec.corpo):sec.corpo}} />; }
+                  const c=corSecao(sec.titulo);
+                  return (
+                    <div key={i} style={{border:'1px solid #e2e8f0',borderLeft:`4px solid ${c.barra}`,borderRadius:10,overflow:'hidden'}}>
+                      <div style={{background:c.bg,color:c.cor,padding:'9px 16px',fontWeight:700,fontSize:14,borderBottom:'1px solid #e2e8f0'}}>{sec.titulo}</div>
+                      <div className="ia-md" style={{padding:'12px 16px'}} dangerouslySetInnerHTML={{__html:window.marked?window.marked.parse(sec.corpo):sec.corpo}} />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Status bar */}
